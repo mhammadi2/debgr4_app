@@ -1,7 +1,21 @@
 // lib/auth.ts
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-// Import other providers as needed
+import { compare } from "bcryptjs"; // For secure password comparison
+import { prisma } from "./db"; // database connection
+
+// Define TypeScript types to match schema
+declare module "next-auth" {
+  interface User {
+    id: string;
+    email: string;
+    role: string;
+  }
+
+  interface Session {
+    user: User;
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -12,18 +26,52 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        // Your authentication logic here
-        // This is just an example - implement your actual auth logic
-        if (
-          credentials?.email === "user@example.com" &&
-          credentials?.password === "password"
-        ) {
-          return { id: "1", name: "User", email: "user@example.com" };
+        // Validate credentials
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error("Email and password are required");
         }
-        return null;
+
+        try {
+          // Find the user by email - only selecting fields that exist in schema
+          const user = await prisma.user.findUnique({
+            where: { email: credentials.email },
+            select: {
+              id: true,
+              email: true,
+              password: true,
+              role: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          });
+
+          // If no user found
+          if (!user) {
+            return null;
+          }
+
+          // Compare passwords
+          const passwordMatch = await compare(
+            credentials.password,
+            user.password
+          );
+
+          if (!passwordMatch) {
+            return null;
+          }
+
+          // Return user data without sensitive information
+          return {
+            id: user.id,
+            email: user.email,
+            role: user.role,
+          };
+        } catch (error) {
+          console.error("Authentication error:", error);
+          return null;
+        }
       },
     }),
-    // Add other providers as needed
   ],
   session: {
     strategy: "jwt",
@@ -32,18 +80,27 @@ export const authOptions: NextAuthOptions = {
     signIn: "/login",
   },
   callbacks: {
-    // Add these debugging callbacks
     async session({ session, token }) {
       console.log("Session callback:", { session, token });
+
+      if (token && session.user) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+      }
+
       return session;
     },
     async jwt({ token, user }) {
       console.log("JWT callback:", { token, user });
+
       if (user) {
         token.id = user.id;
+        token.role = user.role;
       }
+
       return token;
     },
   },
   debug: process.env.NODE_ENV === "development",
+  secret: process.env.NEXTAUTH_SECRET,
 };

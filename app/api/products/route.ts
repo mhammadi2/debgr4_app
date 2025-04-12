@@ -1,6 +1,6 @@
 // app/api/products/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 
 /**
  * GET    /api/products   -> Fetch all products
@@ -12,29 +12,38 @@ import { prisma } from '@/lib/db'
 export async function GET() {
   try {
     const products = await prisma.product.findMany({
-      orderBy: { createdAt: 'desc' },
-    })
-    return NextResponse.json(products)
+      orderBy: { createdAt: "desc" },
+    });
+    return NextResponse.json(products);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { name, description, price, imageUrl } = await request.json()
+    const { name, description, price, imageUrl, category } =
+      await request.json();
 
     if (!name) {
       return NextResponse.json(
-        { error: 'Product name is required' },
+        { error: "Product name is required" },
         { status: 400 }
-      )
+      );
     }
+
+    if (!category) {
+      return NextResponse.json(
+        { error: "Product category is required" },
+        { status: 400 }
+      );
+    }
+
     if (price == null || isNaN(price) || price < 0) {
       return NextResponse.json(
-        { error: 'Price must be a non-negative number' },
+        { error: "Price must be a non-negative number" },
         { status: 400 }
-      )
+      );
     }
 
     const newProduct = await prisma.product.create({
@@ -43,28 +52,33 @@ export async function POST(request: NextRequest) {
         description,
         price: parseFloat(price),
         imageUrl: imageUrl || null,
+        category, // Added the category field here
       },
-    })
-    return NextResponse.json(newProduct, { status: 201 })
+    });
+    return NextResponse.json(newProduct, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 export async function PUT(request: NextRequest) {
   try {
-    const { id, name, description, price, imageUrl } = await request.json()
+    const { id, name, description, price, imageUrl, category } =
+      await request.json();
     if (!id) {
-      return NextResponse.json({ error: 'Missing product ID' }, { status: 400 })
+      return NextResponse.json(
+        { error: "Missing product ID" },
+        { status: 400 }
+      );
     }
 
     // Validate price if provided
     if (price != null) {
       if (isNaN(price) || price < 0) {
         return NextResponse.json(
-          { error: 'Price must be a non-negative number' },
+          { error: "Price must be a non-negative number" },
           { status: 400 }
-        )
+        );
       }
     }
 
@@ -74,28 +88,32 @@ export async function PUT(request: NextRequest) {
         name,
         description,
         price: price != null ? parseFloat(price) : undefined,
-        imageUrl: imageUrl === '' ? null : imageUrl,
+        imageUrl: imageUrl === "" ? null : imageUrl,
+        category, // Added the category field here
       },
-    })
+    });
 
-    return NextResponse.json(updatedProduct)
+    return NextResponse.json(updatedProduct);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { id } = await request.json()
+    const { id } = await request.json();
     if (!id) {
-      return NextResponse.json({ error: 'Missing product ID' }, { status: 400 })
+      return NextResponse.json(
+        { error: "Missing product ID" },
+        { status: 400 }
+      );
     }
 
     await prisma.product.delete({
       where: { id },
-    })
-    return NextResponse.json({ message: 'Product deleted' })
+    });
+    return NextResponse.json({ message: "Product deleted" });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
