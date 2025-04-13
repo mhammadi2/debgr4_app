@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import useSWR from "swr";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -17,16 +17,54 @@ export default function ProductsManagementPage() {
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newPrice, setNewPrice] = useState("");
-  const [newImageUrl, setNewImageUrl] = useState("");
-  const [newCategory, setNewCategory] = useState(""); // New state for category
+  const [newCategory, setNewCategory] = useState("");
+  const [newImage, setNewImage] = useState<File | null>(null);
+  const [newImagePreview, setNewImagePreview] = useState<string | null>(null);
+  const createFileInputRef = useRef<HTMLInputElement>(null);
 
   // EDIT product states
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editPrice, setEditPrice] = useState("");
-  const [editImageUrl, setEditImageUrl] = useState("");
-  const [editCategory, setEditCategory] = useState(""); // New state for category
+  const [editCategory, setEditCategory] = useState("");
+  const [editImage, setEditImage] = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
+  const [keepExistingImage, setKeepExistingImage] = useState(true);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle image file selection for new product
+  const handleNewImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setNewImage(file);
+
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setNewImagePreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setNewImagePreview(null);
+    }
+  };
+
+  // Handle image file selection for edit product
+  const handleEditImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setEditImage(file);
+    setKeepExistingImage(false);
+
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setEditImagePreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setEditImagePreview(null);
+    }
+  };
 
   // CREATE
   async function handleCreateProduct(e: React.FormEvent) {
@@ -49,17 +87,22 @@ export default function ProductsManagementPage() {
     }
 
     try {
+      // Create FormData and append all product details
+      const formData = new FormData();
+      formData.append("name", newName);
+      formData.append("description", newDescription);
+      formData.append("price", newPrice);
+      formData.append("category", newCategory);
+
+      if (newImage) {
+        formData.append("image", newImage);
+      }
+
       const res = await fetch("/api/products", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newName,
-          description: newDescription,
-          price: priceNum,
-          imageUrl: newImageUrl || null,
-          category: newCategory, // Added category
-        }),
+        body: formData,
       });
+
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Failed to create product");
@@ -70,8 +113,12 @@ export default function ProductsManagementPage() {
       setNewName("");
       setNewDescription("");
       setNewPrice("");
-      setNewImageUrl("");
-      setNewCategory(""); // Clear category
+      setNewCategory("");
+      setNewImage(null);
+      setNewImagePreview(null);
+      if (createFileInputRef.current) {
+        createFileInputRef.current.value = "";
+      }
       setShowCreate(false);
     } catch (err: any) {
       alert(err.message);
@@ -84,8 +131,14 @@ export default function ProductsManagementPage() {
     setEditName(prod.name);
     setEditDescription(prod.description || "");
     setEditPrice(prod.price.toString());
-    setEditImageUrl(prod.imageUrl || "");
-    setEditCategory(prod.category || ""); // Add category
+    setEditCategory(prod.category || "");
+    setEditImage(null);
+    setEditImagePreview(null);
+    setKeepExistingImage(true);
+
+    if (editFileInputRef.current) {
+      editFileInputRef.current.value = "";
+    }
   }
 
   // CANCEL EDIT
@@ -94,8 +147,10 @@ export default function ProductsManagementPage() {
     setEditName("");
     setEditDescription("");
     setEditPrice("");
-    setEditImageUrl("");
-    setEditCategory(""); // Clear category
+    setEditCategory("");
+    setEditImage(null);
+    setEditImagePreview(null);
+    setKeepExistingImage(true);
   }
 
   // SUBMIT EDIT
@@ -115,18 +170,24 @@ export default function ProductsManagementPage() {
     }
 
     try {
+      // Create FormData and append all product details
+      const formData = new FormData();
+      formData.append("id", editingProduct.id);
+      formData.append("name", editName);
+      formData.append("description", editDescription);
+      formData.append("price", editPrice);
+      formData.append("category", editCategory);
+      formData.append("keepExistingImage", keepExistingImage.toString());
+
+      if (editImage) {
+        formData.append("image", editImage);
+      }
+
       const res = await fetch("/api/products", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editingProduct.id,
-          name: editName,
-          description: editDescription,
-          price: priceNum,
-          imageUrl: editImageUrl || null,
-          category: editCategory, // Added category
-        }),
+        body: formData,
       });
+
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Failed to update product");
@@ -179,6 +240,7 @@ export default function ProductsManagementPage() {
         <form
           onSubmit={handleCreateProduct}
           className="p-4 border rounded mb-6 space-y-4"
+          encType="multipart/form-data"
         >
           <h2 className="font-semibold">Create Product</h2>
 
@@ -192,7 +254,6 @@ export default function ProductsManagementPage() {
             />
           </div>
 
-          {/* Added Category field */}
           <div>
             <label className="block mb-1">Category</label>
             <input
@@ -211,6 +272,7 @@ export default function ProductsManagementPage() {
               onChange={(e) => setNewDescription(e.target.value)}
             />
           </div>
+
           <div>
             <label className="block mb-1">Price</label>
             <input
@@ -222,23 +284,28 @@ export default function ProductsManagementPage() {
               onChange={(e) => setNewPrice(e.target.value)}
             />
           </div>
+
           <div>
-            <label className="block mb-1">Image URL (optional)</label>
+            <label className="block mb-1">Product Image</label>
             <input
-              type="text"
+              type="file"
+              ref={createFileInputRef}
+              accept="image/*"
               className="border p-2 w-full"
-              value={newImageUrl}
-              onChange={(e) => setNewImageUrl(e.target.value)}
+              onChange={handleNewImageChange}
             />
           </div>
 
           {/* Preview new image */}
-          {newImageUrl && (
-            <img
-              src={newImageUrl}
-              alt="Preview"
-              className="max-w-xs border mt-2"
-            />
+          {newImagePreview && (
+            <div className="mt-2">
+              <p className="text-sm text-gray-500">Image Preview:</p>
+              <img
+                src={newImagePreview}
+                alt="Preview"
+                className="max-w-xs max-h-40 border mt-1"
+              />
+            </div>
           )}
 
           <button
@@ -255,6 +322,7 @@ export default function ProductsManagementPage() {
         <form
           onSubmit={handleEditProduct}
           className="p-4 border rounded mb-6 space-y-4"
+          encType="multipart/form-data"
         >
           <h2 className="font-semibold">Edit Product: {editingProduct.name}</h2>
 
@@ -268,7 +336,6 @@ export default function ProductsManagementPage() {
             />
           </div>
 
-          {/* Added Category field */}
           <div>
             <label className="block mb-1">Category</label>
             <input
@@ -287,6 +354,7 @@ export default function ProductsManagementPage() {
               onChange={(e) => setEditDescription(e.target.value)}
             />
           </div>
+
           <div>
             <label className="block mb-1">Price</label>
             <input
@@ -298,23 +366,53 @@ export default function ProductsManagementPage() {
               onChange={(e) => setEditPrice(e.target.value)}
             />
           </div>
+
           <div>
-            <label className="block mb-1">Image URL (optional)</label>
+            <label className="block mb-1">Product Image</label>
+
+            {/* Current image preview */}
+            {editingProduct.imageUrl && keepExistingImage && (
+              <div className="mb-2">
+                <p className="text-sm text-gray-500">Current Image:</p>
+                <img
+                  src={editingProduct.imageUrl}
+                  alt={editingProduct.name}
+                  className="max-w-xs max-h-40 border mt-1 mb-2"
+                />
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="keepImage"
+                    checked={keepExistingImage}
+                    onChange={(e) => setKeepExistingImage(e.target.checked)}
+                    className="mr-2"
+                  />
+                  <label htmlFor="keepImage" className="text-sm">
+                    Keep existing image
+                  </label>
+                </div>
+              </div>
+            )}
+
             <input
-              type="text"
+              type="file"
+              ref={editFileInputRef}
+              accept="image/*"
               className="border p-2 w-full"
-              value={editImageUrl}
-              onChange={(e) => setEditImageUrl(e.target.value)}
+              onChange={handleEditImageChange}
             />
           </div>
 
           {/* Preview edit image */}
-          {editImageUrl && (
-            <img
-              src={editImageUrl}
-              alt="Preview"
-              className="max-w-xs border mt-2"
-            />
+          {editImagePreview && (
+            <div className="mt-2">
+              <p className="text-sm text-gray-500">New Image Preview:</p>
+              <img
+                src={editImagePreview}
+                alt="Preview"
+                className="max-w-xs max-h-40 border mt-1"
+              />
+            </div>
           )}
 
           <div className="flex items-center space-x-2">
@@ -344,8 +442,7 @@ export default function ProductsManagementPage() {
             <tr className="bg-gray-100">
               <th className="border px-2 py-1">ID</th>
               <th className="border px-2 py-1">Name</th>
-              <th className="border px-2 py-1">Category</th>{" "}
-              {/* Added Category column */}
+              <th className="border px-2 py-1">Category</th>
               <th className="border px-2 py-1">Price</th>
               <th className="border px-2 py-1">Image</th>
               <th className="border px-2 py-1">Created At</th>
@@ -357,8 +454,7 @@ export default function ProductsManagementPage() {
               <tr key={prod.id}>
                 <td className="border px-2 py-1">{prod.id}</td>
                 <td className="border px-2 py-1">{prod.name}</td>
-                <td className="border px-2 py-1">{prod.category}</td>{" "}
-                {/* Added Category display */}
+                <td className="border px-2 py-1">{prod.category}</td>
                 <td className="border px-2 py-1">{prod.price}</td>
                 <td className="border px-2 py-1">
                   {prod.imageUrl ? (
