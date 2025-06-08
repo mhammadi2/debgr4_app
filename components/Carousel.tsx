@@ -121,7 +121,7 @@ export default function Carousel({
   const fallbackImage = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='400' viewBox='0 0 800 400'%3E%3Crect width='800' height='400' fill='%23f0f0f0'/%3E%3Ctext x='400' y='200' font-family='Arial' font-size='24' fill='%23888' text-anchor='middle'%3EImage Not Available%3C/text%3E%3C/svg%3E`;
 
   // Limit displayed products to the first 3
-  const displayedProducts = products.slice(0, 3);
+  const displayedProducts = products.slice(0, 4);
 
   // Animation settings for faster, snappier feel
   const animationProps = {
@@ -363,14 +363,14 @@ export default function Carousel({
                           </motion.p>
                         )}
 
-                        {product.price && (
+                        {/* {product.price && (
                           <motion.div
                             className="slide-price"
                             {...animationDelay(0.3)}
                           >
                             ${product.price.toFixed(2)}
                           </motion.div>
-                        )}
+                        )} */}
 
                         <motion.button
                           className="slide-button"

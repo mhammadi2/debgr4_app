@@ -3,6 +3,7 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image"; // Import the Next.js Image component
 import { useState } from "react";
 import { Menu } from "lucide-react";
 
@@ -38,11 +39,20 @@ export function Navbar() {
         className="bg-white shadow-sm"
       >
         <div className="container mx-auto px-4 md:px-6 flex flex-wrap items-center justify-between py-4">
-          {/* Brand / Logo */}
+          {/* Brand / Logo - Updated */}
           <Link
             href="/"
-            className="text-xl font-bold tracking-tight text-gray-800"
+            // Added flex and items-center for layout
+            className="flex items-center text-m font-bold tracking-tight text-gray-800"
           >
+            {/* Added the Image component */}
+            <Image
+              src="/logo3.png" // <-- IMPORTANT: Replace with the actual path to your logo image
+              alt="logo"
+              width={50} // <-- Adjust width as needed
+              height={50} // <-- Adjust height as needed
+              className="mr-2" // Adds spacing between logo and text
+            />
             DeBugR4
           </Link>
 

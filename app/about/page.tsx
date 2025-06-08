@@ -1,124 +1,153 @@
-// app/about/page.tsx
-'use client'
+"use client";
 
-import { motion } from 'framer-motion'
+import { motion } from "framer-motion";
+import {
+  Cpu,
+  Globe,
+  Users,
+  Zap,
+  Target,
+  Rocket,
+  Send,
+  ArrowRight,
+} from "lucide-react";
+import Link from "next/link";
 
 export default function AboutPage() {
+  const companyValues = [
+    {
+      icon: Rocket,
+      title: "Innovation",
+      description:
+        "Pushing the boundaries of semiconductor design through continuous experimentation and breakthrough technologies.",
+    },
+    {
+      icon: Target,
+      title: "Quality",
+      description:
+        "Rigorous testing and validation ensuring unparalleled reliability from prototype to mass production.",
+    },
+    {
+      icon: Users,
+      title: "Collaboration",
+      description:
+        "Treating every client as a strategic partner, co-creating solutions that exceed expectations.",
+    },
+    {
+      icon: Zap,
+      title: "Sustainability",
+      description:
+        "Committed to eco-friendly processes, energy-efficient designs, and responsible manufacturing.",
+    },
+  ];
+
+  const teamMembers = [
+    {
+      name: "Dr. Zakir Hossain",
+      role: "Chief Technology Officer",
+      expertise: "Advanced IC Design",
+    },
+    {
+      name: "Muhammad Islam",
+      role: "Chief Design Engineer",
+      expertise: "SoC Development",
+    },
+    {
+      name: "Muhammad Islam",
+      role: "Head of Innovation",
+      expertise: "AI and Machine Learning Chips",
+    },
+  ];
+
   return (
-    <motion.section
-      // Simple fade-up animation
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.8 }}
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}
+      className="container mx-auto px-4 py-8"
     >
-      {/* Title */}
-      <h1 className='text-3xl font-bold mb-6'>About Us</h1>
+      <section className="text-center mb-16">
+        <motion.h1
+          initial={{ y: -50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="text-5xl font-bold mb-6 text-gray-800"
+        >
+          Innovating Tomorrow's Technology
+        </motion.h1>
+        <p className="text-xl text-gray-600 max-w-4xl mx-auto">
+          We are a cutting-edge semiconductor design company dedicated to
+          creating transformative technologies that power the future of digital
+          innovation.
+        </p>
+      </section>
 
-      {/* Intro / Overview */}
-      <p className='mb-4'>
-        Welcome to <strong>DeBugR4</strong>, your innovative partner in
-        integrated circuit (IC) design and high-performance electronics
-        solutions. We’re a fast-growing startup driven by a passion for crafting
-        cutting-edge hardware that powers the latest advancements in IoT, AI,
-        industrial automation, and consumer devices.
-      </p>
+      <motion.section
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.3 }}
+        className="grid md:grid-cols-2 gap-12 mb-16"
+      >
+        <div>
+          <h2 className="text-3xl font-bold mb-6">Our Mission</h2>
+          <p className="text-gray-700 mb-4">
+            At DeBugR4, we're committed to pushing the boundaries of
+            semiconductor design. Our mission is to develop innovative,
+            efficient, and transformative chip technologies that solve complex
+            technological challenges across industries.
+          </p>
+          <div className="flex space-x-4 mt-6">
+            {companyValues.map((value, index) => (
+              <div key={index} className="text-center">
+                <value.icon className="w-12 h-12 mx-auto text-blue-600 mb-2" />
+                <h3 className="font-semibold">{value.title}</h3>
+              </div>
+            ))}
+          </div>
+        </div>
 
-      {/* Founders & Origins */}
-      <h2 className='text-2xl font-semibold mt-8 mb-4'>Our Origin Story</h2>
-      <p className='mb-4'>
-        Founded by a team of seasoned semiconductor engineers, software
-        developers, and entrepreneurs, ChipCo began with a shared vision: to
-        revolutionize the hardware landscape through agility, creativity, and
-        relentless innovation. With backgrounds spanning leading tech giants and
-        academic research labs, our founders combined their expertise to create
-        a nimble, visionary startup that could respond to market demands at
-        lightning speed.
-      </p>
+        <div className="bg-gray-100 p-8 rounded-lg">
+          <h2 className="text-3xl font-bold mb-6">Core Leadership</h2>
+          {teamMembers.map((member, index) => (
+            <div
+              key={index}
+              className="mb-4 p-4 bg-white rounded-lg shadow-sm hover:shadow-md transition-all"
+            >
+              <h3 className="text-xl font-semibold">{member.name}</h3>
+              <p className="text-gray-600">{member.role}</p>
+              <p className="text-sm text-gray-500">{member.expertise}</p>
+            </div>
+          ))}
+        </div>
+      </motion.section>
 
-      {/* Mission & Values */}
-      <h2 className='text-2xl font-semibold mt-8 mb-4'>Our Mission & Values</h2>
-      <p className='mb-4'>
-        At ChipCo, we believe every breakthrough starts with a daring idea. Our
-        mission is to push the boundaries of electronics design—delivering chips
-        and modules that power next-generation devices while optimizing energy
-        consumption, performance, and form factor. We stand by our core values
-        of:
-      </p>
-      <ul className='list-disc ml-5 mb-4 space-y-2'>
-        <li>
-          <strong>Innovation</strong> – We constantly experiment, iterate, and
-          improve our solutions.
-        </li>
-        <li>
-          <strong>Quality</strong> – Each design undergoes rigorous testing,
-          ensuring reliability from prototype to mass production.
-        </li>
-        <li>
-          <strong>Collaboration</strong> – We view each client as a partner,
-          working closely to meet and exceed requirements.
-        </li>
-        <li>
-          <strong>Sustainability</strong> – We prioritize eco-friendly
-          processes, from material selection to energy efficiency.
-        </li>
-      </ul>
-
-      {/* Products & Specialties */}
-      <h2 className='text-2xl font-semibold mt-8 mb-4'>Our Specialties</h2>
-      <p className='mb-4'>
-        From flexible wireless modules to robust microcontrollers for industrial
-        robotics, we focus on designing products that excel in both performance
-        and power efficiency. Our current lineup includes:
-      </p>
-      <ul className='list-disc ml-5 mb-4 space-y-2'>
-        <li>
-          <em>AI-Ready SoCs</em> – Ultra-fast processors tailored for on-device
-          machine learning.
-        </li>
-        <li>
-          <em>Ultra-Low-Power MCUs</em> – Optimized for wearables and IoT
-          sensors.
-        </li>
-        <li>
-          <em>Mixed-Signal ICs</em> – Bridging the analog and digital realms for
-          medical and automotive applications.
-        </li>
-      </ul>
-
-      {/* Team & Culture */}
-      <h2 className='text-2xl font-semibold mt-8 mb-4'>Team & Culture</h2>
-      <p className='mb-4'>
-        Our culture is built around open communication, cross-disciplinary
-        collaboration, and a readiness to explore new ideas—no matter how
-        unconventional. Whether perfecting hardware security features or
-        refining a low-noise analog front-end, we tackle challenges with a
-        creative, solutions-first mindset.
-      </p>
-
-      {/* Looking Ahead */}
-      <h2 className='text-2xl font-semibold mt-8 mb-4'>Looking Ahead</h2>
-      <p className='mb-4'>
-        As ChipCo continues to grow, we remain committed to our startup roots:
-        maintaining agility, nurturing innovation, and delivering transformative
-        products that help our clients stay ahead of the curve. We envision a
-        future where powerful, efficient ICs become the backbone of every smart
-        device—creating cleaner, smarter, and more connected communities
-        worldwide.
-      </p>
-
-      {/* Call to Action */}
-      <p className='mb-4 font-medium'>
-        Have questions or want to learn more about our process? Reach out to us
-        anytime at
-        <a href='/contact' className='text-blue-600 hover:underline ml-1'>
-          our contact page
-        </a>
-        , or explore our
-        <a href='/products' className='text-blue-600 hover:underline ml-1'>
-          product lineup
-        </a>
-        to see what we’re building next.
-      </p>
-    </motion.section>
-  )
+      <motion.section
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.6 }}
+        className="text-center bg-blue-50 p-12 rounded-lg"
+      >
+        <h2 className="text-3xl font-bold mb-6">Ready to Collaborate?</h2>
+        <p className="text-xl text-gray-700 max-w-3xl mx-auto mb-8">
+          Whether you're looking to develop cutting-edge semiconductor solutions
+          or explore innovative design services, our team is ready to turn your
+          technological vision into reality.
+        </p>
+        <div className="flex justify-center space-x-6">
+          <Link
+            href="/contact"
+            className="flex items-center bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Send className="mr-2" /> Contact Our Team
+          </Link>
+          <Link
+            href="/design-service"
+            className="flex items-center bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            <Cpu className="mr-2" /> Explore Design Services
+            <ArrowRight className="ml-2" />
+          </Link>
+        </div>
+      </motion.section>
+    </motion.div>
+  );
 }

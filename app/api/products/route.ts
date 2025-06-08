@@ -1,9 +1,8 @@
-// app/api/products/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
-import { v4 as uuidv4 } from "uuid"; // You'll need to install this: npm install uuid
+import { v4 as uuidv4 } from "uuid"; // Make sure to install uuid
 
 // Ensure upload directory exists
 async function ensureUploadDirExists() {
@@ -18,11 +17,8 @@ async function ensureUploadDirExists() {
 
 // Function to handle image upload
 async function saveImageToServer(file: File): Promise<string> {
-  // Create a unique filename
   const fileExtension = file.name.split(".").pop();
   const fileName = `${uuidv4()}.${fileExtension}`;
-
-  // Define the upload directory and ensure it exists
   const uploadDir = await ensureUploadDirExists();
 
   // Read file as ArrayBuffer
@@ -33,8 +29,7 @@ async function saveImageToServer(file: File): Promise<string> {
   const filePath = path.join(uploadDir, fileName);
   await writeFile(filePath, buffer);
 
-  // Return the path that can be used in <img> tags
-  return `/uploads/${fileName}`;
+  return `/uploads/${fileName}`; // Path usable in <img> tags
 }
 
 export async function GET() {
@@ -50,7 +45,6 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    // Handle multipart form data
     const formData = await request.formData();
     const name = formData.get("name") as string;
     const description = formData.get("description") as string;
@@ -58,16 +52,9 @@ export async function POST(request: NextRequest) {
     const category = formData.get("category") as string;
     const imageFile = formData.get("image") as File | null;
 
-    if (!name) {
+    if (!name || !category) {
       return NextResponse.json(
-        { error: "Product name is required" },
-        { status: 400 }
-      );
-    }
-
-    if (!category) {
-      return NextResponse.json(
-        { error: "Product category is required" },
+        { error: "Product name and category are required" },
         { status: 400 }
       );
     }
@@ -80,7 +67,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Process the image if it exists
     let imageUrl = null;
     if (imageFile && imageFile.size > 0) {
       imageUrl = await saveImageToServer(imageFile);
@@ -103,9 +89,18 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    // Handle multipart form data
     const formData = await request.formData();
     const id = formData.get("id") as string;
+
+    // Convert ID to integer
+    const productId = parseInt(id);
+    if (isNaN(productId)) {
+      return NextResponse.json(
+        { error: "Invalid product ID" },
+        { status: 400 }
+      );
+    }
+
     const name = formData.get("name") as string;
     const description = formData.get("description") as string;
     const priceStr = formData.get("price") as string;
@@ -113,43 +108,33 @@ export async function PUT(request: NextRequest) {
     const imageFile = formData.get("image") as File | null;
     const keepExistingImage = formData.get("keepExistingImage") === "true";
 
-    if (!id) {
-      return NextResponse.json(
-        { error: "Missing product ID" },
-        { status: 400 }
-      );
-    }
-
-    // Validate price if provided
-    const price = parseFloat(priceStr);
-    if (isNaN(price) || price < 0) {
+    const price = priceStr ? parseFloat(priceStr) : undefined;
+    if (price !== undefined && (isNaN(price) || price < 0)) {
       return NextResponse.json(
         { error: "Price must be a non-negative number" },
         { status: 400 }
       );
     }
 
-    // Get the existing product to check its current image
     const existingProduct = await prisma.product.findUnique({
-      where: { id },
+      where: { id: productId }, // Use the integer productId
     });
 
     if (!existingProduct) {
       return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 
-    // Process the image if a new one is uploaded
     let imageUrl = keepExistingImage ? existingProduct.imageUrl : null;
     if (imageFile && imageFile.size > 0) {
       imageUrl = await saveImageToServer(imageFile);
     }
 
     const updatedProduct = await prisma.product.update({
-      where: { id },
+      where: { id: productId }, // Use the integer productId
       data: {
         name,
-        description: description || "",
-        price,
+        description: description || existingProduct.description,
+        price: price !== undefined ? price : existingProduct.price,
         imageUrl,
         category,
       },
@@ -164,6 +149,16 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { id } = await request.json();
+
+    // Convert ID to integer
+    const productId = parseInt(id);
+    if (isNaN(productId)) {
+      return NextResponse.json(
+        { error: "Invalid product ID" },
+        { status: 400 }
+      );
+    }
+
     if (!id) {
       return NextResponse.json(
         { error: "Missing product ID" },
@@ -172,7 +167,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     await prisma.product.delete({
-      where: { id },
+      where: { id: productId }, // Use the integer productId
     });
     return NextResponse.json({ message: "Product deleted" });
   } catch (error: any) {

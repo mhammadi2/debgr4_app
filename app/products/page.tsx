@@ -15,7 +15,7 @@ interface Product {
   category: string;
   description: string;
   price: number;
-  imageUrl?: string; // Use imageUrl as the expected product image path
+  imageUrl?: string; // Optional image URL
 }
 
 export default function ProductsPage() {
@@ -23,16 +23,12 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Function to resolve image path based on your provided logic
+  // Function to resolve image path based on provided logic
   const resolveImagePath = (imagePath?: string): string => {
-    const fallbackImage = PLACEHOLDER_IMAGE; // Fallback placeholder image
-    const imagePathResolved = imagePath
-      ? `/${imagePath.replace(/^\/+/, "")}`
-      : fallbackImage; // Normalize the path
-    return imagePathResolved; // Return the resolved image path
+    return imagePath ? `/${imagePath.replace(/^\/+/, "")}` : PLACEHOLDER_IMAGE; // Fallback to placeholder image
   };
 
-  // Fetch products effect
+  // Fetch products when the component mounts
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -40,7 +36,7 @@ export default function ProductsPage() {
         if (!response.ok) {
           throw new Error("Failed to fetch products");
         }
-        const data = await response.json();
+        const data: Product[] = await response.json();
         setProducts(data);
       } catch (err) {
         setError(
@@ -52,7 +48,7 @@ export default function ProductsPage() {
     };
 
     fetchProducts();
-  }, []); // Empty dependency array ensures this runs only once
+  }, []); // The empty array ensures this runs only once
 
   // Loading spinner
   if (loading) {
@@ -81,6 +77,7 @@ export default function ProductsPage() {
     );
   }
 
+  // Render products
   return (
     <motion.section
       initial={{ opacity: 0, y: 20 }}
