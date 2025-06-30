@@ -1,106 +1,138 @@
-// lib/auth.ts
-import { NextAuthOptions } from "next-auth";
+// File: lib/auth.ts (Complete and Corrected)
+
+import {
+  getServerSession,
+  type NextAuthOptions,
+  type User as NextAuthUser,
+} from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { compare } from "bcryptjs"; // For secure password comparison
-import { prisma } from "./db"; // database connection
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import bcrypt from "bcryptjs";
+import { UserRole } from "@prisma/client";
+import { redirect } from "next/navigation";
 
-// Define TypeScript types to match schema
+import { prisma } from "@/lib/prisma";
+
+// --- TYPE AUGMENTATION ---
+// This adds the 'role' and 'id' to NextAuth's default User and Session types
+// for type safety throughout your application.
 declare module "next-auth" {
-  interface User {
-    id: string;
-    email: string;
-    role: string;
+  interface User extends NextAuthUser {
+    role?: UserRole;
   }
-
   interface Session {
-    user: User;
+    user?: User;
+  }
+}
+declare module "next-auth/jwt" {
+  interface JWT {
+    id?: string;
+    role?: UserRole;
   }
 }
 
+// --- AUTHENTICATION OPTIONS ---
 export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma),
+  session: { strategy: "jwt" },
+
   providers: [
     CredentialsProvider({
       name: "Credentials",
+      id: "credentials",
       credentials: {
-        email: { label: "Email", type: "email" },
+        // The form field `id` is 'email', so we expect `creds.email`.
+        email: { label: "Email or Username", type: "text" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
-        // Validate credentials
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error("Email and password are required");
+
+      // --- THE CORE AUTHORIZATION LOGIC ---
+      async authorize(creds) {
+        if (!creds?.email || !creds.password) {
+          return null; // A null return is expected on failure
         }
 
-        try {
-          // Find the user by email - only selecting fields that exist in schema
-          const user = await prisma.user.findUnique({
-            where: { email: credentials.email },
-            select: {
-              id: true,
-              email: true,
-              password: true,
-              role: true,
-              createdAt: true,
-              updatedAt: true,
-            },
-          });
+        // 1. Attempt to find as an ADMIN by username
+        const admin = await prisma.admin.findUnique({
+          where: { username: creds.email },
+        });
 
-          // If no user found
-          if (!user) {
-            return null;
-          }
-
-          // Compare passwords
-          const passwordMatch = await compare(
-            credentials.password,
-            user.password
-          );
-
-          if (!passwordMatch) {
-            return null;
-          }
-
-          // Return user data without sensitive information
+        if (
+          admin &&
+          (await bcrypt.compare(creds.password, admin.passwordHash))
+        ) {
+          // Admin authenticated successfully
           return {
-            id: user.id,
-            email: user.email,
-            role: user.role,
+            id: admin.id,
+            name: admin.username,
+            email: `${admin.username}@admin.local`, // Dummy email for NextAuth
+            role: admin.role,
           };
-        } catch (error) {
-          console.error("Authentication error:", error);
-          return null;
         }
+
+        // 2. If not admin, attempt to find as a CUSTOMER by email
+        const customer = await prisma.user.findUnique({
+          where: { email: creds.email },
+        });
+
+        if (
+          customer &&
+          customer.password &&
+          (await bcrypt.compare(creds.password, customer.password))
+        ) {
+          // Customer authenticated successfully
+          return {
+            id: customer.id,
+            name: customer.name,
+            email: customer.email,
+            role: customer.role,
+          };
+        }
+
+        // 3. If no user found in either table, authentication fails
+        return null;
       },
     }),
   ],
-  session: {
-    strategy: "jwt",
-  },
-  pages: {
-    signIn: "/login",
-  },
+
+  // --- CALLBACKS TO ENRICH THE TOKEN & SESSION ---
   callbacks: {
-    async session({ session, token }) {
-      console.log("Session callback:", { session, token });
-
-      if (token && session.user) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as string;
-      }
-
-      return session;
-    },
-    async jwt({ token, user }) {
-      console.log("JWT callback:", { token, user });
-
+    // The `jwt` callback runs first, adding the role to the token.
+    jwt({ token, user }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
       }
-
       return token;
     },
+    // The `session` callback then transfers the role from the token to the session object.
+    session({ session, token }) {
+      if (session.user) {
+        session.user.id = token.id;
+        session.user.role = token.role;
+      }
+      return session;
+    },
+    // NOTE: We have intentionally REMOVED the `signIn` callback.
+    // Handling redirects on the client-side after login is more reliable.
   },
-  debug: process.env.NODE_ENV === "development",
+
+  pages: {
+    signIn: "/login",
+    error: "/login", // Redirect user to login page on error
+  },
+
   secret: process.env.NEXTAUTH_SECRET,
+  debug: process.env.NODE_ENV === "development",
 };
+
+// --- HELPER FUNCTIONS ---
+export const getAuth = () => getServerSession(authOptions);
+
+export async function requireAdmin() {
+  const session = await getAuth();
+  if (session?.user.role !== "ADMIN" && session?.user.role !== "SUPER_ADMIN") {
+    redirect("/login?error=Unauthorized");
+  }
+  return session;
+}

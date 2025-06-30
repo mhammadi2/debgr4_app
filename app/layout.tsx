@@ -1,32 +1,36 @@
-// app/layout.tsx
+// File: app/layout.tsx (Corrected)
+
 import "@/app/globals.css";
 import { ReactNode } from "react";
-import { Navbar } from "@/components/ui/navbar";
-import Footer from "@/components/Footer";
-import { CartProvider } from "@/contexts/CartContext"; // Import the CartProvider
+import { Providers } from "./providers";
+import { Navbar } from "@/components/ui/navbar"; // Correctly import the Navbar Server Component
+
+// --- ✅ CORRECTED IMPORT ---
+// Import our new, reliable helper function 'getAuth' instead of 'auth'.
+import { getAuth } from "@/lib/auth";
 
 export const metadata = {
-  title: "Electronic Chip Design & Manufacturing",
-  description: "Manage chip design & manufacturing with Next.js & shadcn/ui",
+  title: "DeBugR4 - IC & Electronic Design",
+  description:
+    "Your one-stop shop for electronic components and design services.",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  // --- ✅ CORRECTED FUNCTION CALL ---
+  // Call our new 'getAuth' helper to fetch the session on the server.
+  const session = await getAuth();
+
   return (
     <html lang="en">
-      <body className="min-h-screen flex flex-col bg-gradient-to-b from-green-100 via-white to-green-200">
-        {/* Wrap the entire layout with CartProvider */}
-        <CartProvider>
-          {/* Two-row Navbar */}
+      <body>
+        <Providers session={session}>
           <Navbar />
-
-          {/* Main content area with a slightly transparent white background for clarity */}
-          <main className="container mx-auto px-4 md:px-6 flex-grow mt-4 bg-white/70 rounded-lg shadow-md py-6">
-            {children}
-          </main>
-
-          {/* Animated Footer */}
-          <Footer />
-        </CartProvider>
+          <main className="pt-36">{children}</main>
+        </Providers>
       </body>
     </html>
   );
