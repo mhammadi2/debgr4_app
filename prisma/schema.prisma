@@ -24,6 +24,7 @@ model User {
   role      UserRole @default(USER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  status        UserStatus @default(ACTIVE) // For enabling/disabling users
 
   orders Order[]
 }
@@ -162,4 +163,9 @@ enum TransactionStatus {
 enum UserRole {
   USER
   ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
 }

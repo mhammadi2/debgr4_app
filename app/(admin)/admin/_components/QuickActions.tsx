@@ -1,60 +1,55 @@
-// app/(admin)/admin/_components/QuickActions.tsx
+// File: app/(admin)/admin/_components/QuickActions.tsx (Revised)
 "use client";
 
-import { useRouter } from "next/navigation";
-import { TrendingUp, PlusCircle, Package, FileText } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { PlusCircle, Package, FileText } from "lucide-react";
 
-const ActionButton = ({ title, description, icon, onClick }: any) => (
-  <button
-    onClick={onClick}
-    className="w-full text-left p-4 rounded-lg hover:bg-gray-100 hover:shadow-sm transition-all group"
-  >
-    <div className="flex items-center">
-      <div className="p-2 bg-gray-100 rounded-lg group-hover:bg-white">
-        {icon}
-      </div>
-      <div className="ml-4">
-        <div className="font-semibold text-gray-800">{title}</div>
-        <div className="text-sm text-gray-500">{description}</div>
-      </div>
-    </div>
-  </button>
-);
+// The data for our action buttons
+const actions = [
+  {
+    title: "Add New Product",
+    href: "/admin/products/new",
+    icon: <PlusCircle className="mr-2 h-4 w-4" />,
+  },
+  {
+    title: "Manage Products",
+    href: "/admin/products",
+    icon: <Package className="mr-2 h-4 w-4" />,
+  },
+  {
+    title: "View Reports",
+    href: "/admin/analytics",
+    icon: <FileText className="mr-2 h-4 w-4" />,
+  },
+];
 
-export default function QuickActions() {
-  const router = useRouter();
-  const actions = [
-    {
-      title: "Add New Product",
-      description: "Expand your catalog",
-      icon: <PlusCircle className="text-blue-600" />,
-      onClick: () => router.push("/admin/products/new"), // Example route
-    },
-    {
-      title: "Manage Inventory",
-      description: "Update stock levels",
-      icon: <Package className="text-green-600" />,
-      onClick: () => router.push("/admin/products"),
-    },
-    {
-      title: "Generate Report",
-      description: "Create a new sales report",
-      icon: <FileText className="text-purple-600" />,
-      onClick: () => router.push("/admin/analytics"),
-    },
-  ];
-
+/**
+ * ✅ 1. EXPORT: Changed to a named export to match the import on the dashboard page.
+ * Provides quick navigation buttons for common admin tasks.
+ */
+export function QuickActions() {
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6 h-full">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-bold text-gray-800">Quick Actions</h3>
-        <TrendingUp className="text-gray-400" size={22} />
-      </div>
-      <div className="space-y-3">
-        {actions.map((action) => (
-          <ActionButton key={action.title} {...action} />
-        ))}
-      </div>
+    /**
+     * ✅ 2. STRUCTURE & STYLE: The component now renders a simple list of buttons.
+     * The Card, CardHeader, and CardContent are handled by the parent page.
+     * We use theme-aware Button components instead of custom divs and styles.
+     */
+    <div className="space-y-2">
+      {actions.map((action) => (
+        <Button
+          key={action.title}
+          asChild // Allows the Button to wrap the Link component
+          variant="ghost" // A clean, theme-aware style
+          className="w-full justify-start"
+        >
+          {/* ✅ 3. NAVIGATION: Using Next.js <Link> for proper client-side routing */}
+          <Link href={action.href}>
+            {action.icon}
+            {action.title}
+          </Link>
+        </Button>
+      ))}
     </div>
   );
 }

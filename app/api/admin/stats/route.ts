@@ -1,68 +1,45 @@
-// app/api/admin/stats/route.ts (Fixed for your schema)
+// File: app/api/admin/stats/route.ts (Corrected and Secured)
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/auth";
+import { getAuth } from "@/lib/auth";
+import { UserRole } from "@prisma/client";
 
+/**
+ * GET: Fetches aggregate statistics for the admin dashboard.
+ * This endpoint is protected and only accessible by admins.
+ */
 export async function GET() {
+  // 1. Authorization: Secure the endpoint.
+  const session = await getAuth();
+  if (session?.user?.role !== UserRole.ADMIN) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   try {
-    await requireAdmin();
-
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    console.log("Fetching admin stats...");
-
-    const [totalProducts, totalOrders, totalCustomers, monthlyOrdersData] =
-      await Promise.all([
-        // Count total products
-        prisma.product.count(),
-
-        // Count total orders
-        prisma.order.count(),
-
-        // Count total customers (users with USER role)
-        prisma.user.count({ where: { role: "USER" } }),
-
-        // Get monthly orders data with correct field name and enum values
-        prisma.order.findMany({
-          where: {
-            createdAt: { gte: startOfMonth },
-            // Only count completed/successful orders for revenue
-            status: {
-              in: ["DELIVERED", "SHIPPED"], // Using your actual enum values
-            },
-          },
-          select: {
-            totalAmount: true, // Using correct field name from schema
-            status: true,
-          },
-        }),
-      ]);
-
-    // Calculate monthly revenue using totalAmount field
-    const monthlyRevenue = monthlyOrdersData.reduce(
-      (sum, order) => sum + Number(order.totalAmount),
-      0
-    );
-
-    const stats = {
-      totalProducts,
-      totalOrders,
-      totalCustomers,
-      monthlyRevenue,
-    };
-
-    console.log("Stats calculated successfully:", stats);
-
-    return NextResponse.json(stats);
-  } catch (error) {
-    console.error("Error fetching admin stats:", error);
-
-    return NextResponse.json(
-      {
-        error: "Failed to fetch stats",
-        details: error instanceof Error ? error.message : "Unknown error",
+    // 2. Database Query: Fetch the required data.
+    const userCount = await prisma.user.count();
+    const orderCount = await prisma.order.count();
+    const totalRevenue = await prisma.order.aggregate({
+      _sum: {
+        // ✅ CORRECTION: Use the correct field name from your schema.
+        // It is most likely `totalAmount`, not `total`.
+        totalAmount: true,
       },
+    });
+
+    // 3. Success Response: Return the fetched statistics.
+    return NextResponse.json({
+      userCount,
+      orderCount,
+      // ✅ CORRECTION: Access the result using the same correct field name.
+      totalRevenue: totalRevenue._sum.totalAmount || 0,
+    });
+  } catch (error) {
+    // 4. Error Handling
+    console.error("Failed to fetch admin statistics:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
       { status: 500 }
     );
   }

@@ -1,69 +1,61 @@
-// File: prisma/seed.ts (Corrected)
-
+// prisma/seed.ts
 import { PrismaClient, UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("🌱 Seeding database...");
+  console.log("🌱  Seeding database …");
 
-  // --- 1. Seed the Admin table for Admin login ---
-  const adminUsername = process.env.ADMIN_USERNAME || "admin";
-  const adminPassword = process.env.ADMIN_PASSWORD || "password123";
+  /* ──────────────── 1.  ADMIN  ──────────────── */
+  const adminUsername = process.env.ADMIN_USERNAME ?? "admin";
+  const adminPassword = process.env.ADMIN_PASSWORD ?? "admin123";
 
-  // Hash the password
-  const adminHashedPassword = await bcrypt.hash(adminPassword, 12);
+  const adminHash = await bcrypt.hash(adminPassword, 12);
 
-  // Use `upsert` to create the admin in the `Admin` table
   const admin = await prisma.admin.upsert({
-    where: { username: adminUsername }, // Find admin by its unique username
-    update: {
-      // If found, ensure the password and role are up-to-date
-      passwordHash: adminHashedPassword,
-      role: UserRole.ADMIN,
-    },
+    where: { username: adminUsername },
+    update: { passwordHash: adminHash, role: UserRole.ADMIN },
     create: {
-      // If not found, create a new admin with these details
       username: adminUsername,
-      passwordHash: adminHashedPassword,
+      passwordHash: adminHash,
       role: UserRole.ADMIN,
     },
   });
 
-  console.log(`✅ Upserted Admin: ${admin.username}`);
+  console.log(`✅  Admin account ready  →  ${admin.username}`);
 
-  // --- 2. Seed the User table for regular customer login (Your existing logic is great!) ---
-  const userEmail = "user@example.com";
-  const userPassword = "user123";
+  /* ──────────────── 2.  Example CUSTOMER  ──────────────── */
+  const userEmail = process.env.EXAMPLE_USER_EMAIL;
+  const userPassword = process.env.EXAMPLE_USER_PASSWORD;
 
-  const existingUser = await prisma.user.findUnique({
-    where: { email: userEmail },
-  });
-
-  if (!existingUser) {
-    const userHashedPassword = await bcrypt.hash(userPassword, 12);
-    const user = await prisma.user.create({
-      data: {
-        email: userEmail,
-        name: "Regular User",
-        password: userHashedPassword, // Note: your `User` model uses `password`
-        role: UserRole.USER,
-      },
+  if (userEmail && userPassword) {
+    const existing = await prisma.user.findUnique({
+      where: { email: userEmail },
     });
-    console.log(`✅ Created Regular User: ${user.email}`);
-  } else {
-    console.log(`- Regular User already exists: ${existingUser.email}`);
+
+    if (!existing) {
+      const userHash = await bcrypt.hash(userPassword, 12);
+      await prisma.user.create({
+        data: {
+          email: userEmail,
+          name: "Example User",
+          password: userHash,
+          role: UserRole.USER,
+        },
+      });
+      console.log(`✅  Customer account ready  →  ${userEmail}`);
+    } else {
+      console.log(`ℹ️  Customer already exists  →  ${existing.email}`);
+    }
   }
 
-  console.log("🌱 Seed completed successfully.");
+  console.log("🌱  Seeding finished.\n");
 }
 
 main()
-  .catch((e) => {
-    console.error("❌ Error during seeding:", e);
+  .catch((err) => {
+    console.error("❌  Seed error:", err);
     process.exit(1);
   })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .finally(() => prisma.$disconnect());

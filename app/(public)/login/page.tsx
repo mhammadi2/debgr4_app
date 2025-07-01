@@ -1,16 +1,16 @@
-// File: app/(public)/login/page.tsx (Complete and Corrected)
+// File: app/(public)/login/page.tsx (Corrected and Aligned)
 
 "use client";
 
-import { useState, ChangeEvent, FormEvent, useEffect } from "react";
-import { signIn, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { Lock, User, AlertCircle } from "lucide-react";
+import { useState, ChangeEvent, FormEvent } from "react";
+import { signIn } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Lock, User, AlertCircle, Loader2 } from "lucide-react";
 
-// A small, reusable input component for a clean form structure
+// Reusable input component - this is well-designed and needs no changes.
 const FormInput = ({ id, type, placeholder, value, onChange, icon: Icon }) => (
   <div className="relative">
-    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
       <Icon className="h-5 w-5 text-gray-400" />
     </div>
     <input
@@ -18,7 +18,7 @@ const FormInput = ({ id, type, placeholder, value, onChange, icon: Icon }) => (
       name={id}
       type={type}
       required
-      className="rounded-md relative block w-full appearance-none px-3 py-2 pl-10 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 sm:text-sm"
+      className="relative block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 pl-10 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-blue-500 sm:text-sm"
       placeholder={placeholder}
       value={value}
       onChange={onChange}
@@ -26,7 +26,7 @@ const FormInput = ({ id, type, placeholder, value, onChange, icon: Icon }) => (
   </div>
 );
 
-export default function UnifiedAuthPage() {
+export default function PublicLoginPage() {
   const [isLoginTab, setIsLoginTab] = useState(true);
   const [formData, setFormData] = useState({
     name: "",
@@ -36,24 +36,14 @@ export default function UnifiedAuthPage() {
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // ✅ IMPROVEMENT: Read the callbackUrl from the URL for a smart redirect.
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
 
-  // ✅ Get session status from NextAuth
-  const { status, data: session } = useSession();
-
-  // ✅ This useEffect hook is the core of the fix.
-  // It waits for the session status to become "authenticated" before redirecting.
-  useEffect(() => {
-    if (status === "authenticated") {
-      const userRole = session?.user?.role;
-      // Now that the session is confirmed, we can safely redirect based on role.
-      if (userRole === "ADMIN" || userRole === "SUPER_ADMIN") {
-        router.push("/admin");
-      } else {
-        router.push("/dashboard");
-      }
-    }
-  }, [status, session, router]); // This hook runs when status, session, or router changes.
+  // ❌ REMOVED: The `useEffect` and `useSession` hooks have been removed.
+  // They are no longer needed as the middleware handles all session-based redirects.
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -63,31 +53,30 @@ export default function UnifiedAuthPage() {
     }));
   };
 
-  // ✅ REVISED: The handleLogin function now ONLY handles the sign-in attempt.
-  // The redirect is handled by the useEffect hook above.
+  // ✅ REVISED: The login function is now simple, direct, and correct.
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    const result = await signIn("credentials", {
-      // Send the input value for the backend to check as email or username.
+    // ✅ CORRECTION: Use the specific "credentials-user" provider.
+    const result = await signIn("credentials-user", {
       email: formData.email,
       password: formData.password,
-      redirect: false, // We must handle redirects manually to avoid race conditions.
+      redirect: false, // We handle redirects manually after checking the result.
     });
 
     setLoading(false);
 
     if (result?.error) {
-      // If NextAuth returns an error (e.g., wrong password), display it.
-      setError("Invalid username or password.");
+      setError("Invalid email or password.");
+    } else if (result?.ok) {
+      // On success, ALWAYS redirect to the user dashboard or the saved callbackUrl.
+      router.push(callbackUrl);
     }
-
-    // If login is successful, the `useEffect` hook will automatically handle the redirect.
-    // We do not need to add any `router.push` logic here.
   };
 
+  // This function remains largely the same, but now calls the corrected `handleLogin`.
   const handleRegister = async (e: FormEvent) => {
     e.preventDefault();
     if (!formData.terms)
@@ -105,13 +94,11 @@ export default function UnifiedAuthPage() {
           password: formData.password,
         }),
       });
-
       const data = await response.json();
       if (!response.ok)
         throw new Error(data.error || "Failed to create account.");
 
-      // After successful registration, trigger the login process.
-      // The handleLogin function will then allow the useEffect to redirect.
+      // After registration, trigger the simplified login process.
       await handleLogin(e);
     } catch (err: any) {
       setError(err.message);
@@ -121,8 +108,8 @@ export default function UnifiedAuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="w-full max-w-md space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             {isLoginTab
@@ -130,12 +117,10 @@ export default function UnifiedAuthPage() {
               : "Create a Customer Account"}
           </h2>
         </div>
-
-        {/* Tab Buttons */}
         <div className="flex border-b">
           <button
             onClick={() => setIsLoginTab(true)}
-            className={`w-1/2 py-4 font-medium text-sm ${
+            className={`w-1/2 py-4 text-sm font-medium ${
               isLoginTab
                 ? "border-b-2 border-blue-600 text-blue-600"
                 : "text-gray-500 hover:text-gray-700"
@@ -145,7 +130,7 @@ export default function UnifiedAuthPage() {
           </button>
           <button
             onClick={() => setIsLoginTab(false)}
-            className={`w-1/2 py-4 font-medium text-sm ${
+            className={`w-1/2 py-4 text-sm font-medium ${
               !isLoginTab
                 ? "border-b-2 border-blue-600 text-blue-600"
                 : "text-gray-500 hover:text-gray-700"
@@ -154,19 +139,17 @@ export default function UnifiedAuthPage() {
             Create Account
           </button>
         </div>
-
         <form
           className="mt-8 space-y-6"
           onSubmit={isLoginTab ? handleLogin : handleRegister}
         >
           {error && (
-            <div className="rounded-md bg-red-50 p-4 flex items-center">
-              <AlertCircle className="h-5 w-5 text-red-400 mr-3 flex-shrink-0" />
+            <div className="flex items-center rounded-md bg-red-50 p-4">
+              <AlertCircle className="mr-3 h-5 w-5 flex-shrink-0 text-red-400" />
               <p className="text-sm text-red-800">{error}</p>
             </div>
           )}
-
-          <div className="rounded-md shadow-sm space-y-4">
+          <div className="space-y-4 rounded-md shadow-sm">
             {!isLoginTab && (
               <FormInput
                 id="name"
@@ -177,14 +160,17 @@ export default function UnifiedAuthPage() {
                 icon={User}
               />
             )}
+
+            {/* ✅ CORRECTION: Placeholder text is now clear and unambiguous. */}
             <FormInput
               id="email"
-              type="text"
-              placeholder="Email or Admin Username"
+              type="email"
+              placeholder="Email"
               value={formData.email}
               onChange={handleInputChange}
               icon={User}
             />
+
             <FormInput
               id="password"
               type="password"
@@ -194,7 +180,6 @@ export default function UnifiedAuthPage() {
               icon={Lock}
             />
           </div>
-
           {!isLoginTab && (
             <div className="flex items-center">
               <input
@@ -203,7 +188,7 @@ export default function UnifiedAuthPage() {
                 type="checkbox"
                 checked={formData.terms}
                 onChange={handleInputChange}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <label
                 htmlFor="terms"
@@ -219,18 +204,19 @@ export default function UnifiedAuthPage() {
               </label>
             </div>
           )}
-
           <div>
             <button
               type="submit"
-              disabled={loading || status === "authenticated"} // Also disable button after successful login
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              disabled={loading}
+              className="group relative flex w-full justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
             >
-              {loading
-                ? "Processing..."
-                : isLoginTab
-                ? "Sign In"
-                : "Create Account & Sign In"}
+              {loading ? (
+                <Loader2 className="animate-spin" />
+              ) : isLoginTab ? (
+                "Sign In"
+              ) : (
+                "Create Account & Sign In"
+              )}
             </button>
           </div>
         </form>

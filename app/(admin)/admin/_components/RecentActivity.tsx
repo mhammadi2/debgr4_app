@@ -1,89 +1,101 @@
-// File: app/(admin)/admin/_components/RecentActivity.tsx
+// File: app/(admin)/admin/_components/RecentActivity.tsx (Corrected)
 
 "use client";
 
-import useSWR from "swr";
-import { Loader2, AlertTriangle } from "lucide-react";
-import { RecentOrders } from "./RecentOrders";
-import { NewUsers } from "./NewUsers";
+// ✅ 1. IMPORT STATEMENTS: These are necessary and correct.
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useQuery } from "@tanstack/react-query";
+import { UserRole } from "@prisma/client";
 
-// Define the data shapes for type safety. Adjust these to match your Prisma models.
-export interface Order {
+// --- Define the data types we expect from our APIs ---
+type RecentOrder = {
   id: string;
-  amount: number;
-  status: "PENDING" | "COMPLETED" | "CANCELLED";
-  createdAt: string; // Or Date
-  user: {
-    id: string;
-    name: string | null;
-    image: string | null;
-  };
-}
+  totalAmount: number;
+  user: { name: string | null; email: string | null } | null;
+};
 
-export interface NewUser {
+type RecentUser = {
   id: string;
   name: string | null;
   email: string | null;
-  createdAt: string; // Or Date
-}
+};
 
-// This is now a "Container Component"
-export default function RecentActivity() {
-  // 1. Fetch the data needed for this section using SWR.
-  const { data: orders, error: ordersError } = useSWR<Order[]>(
-    "/api/admin/orders/recent"
-  );
-  const { data: users, error: usersError } = useSWR<NewUser[]>(
-    "/api/admin/users/recent"
-  );
+// --- API Fetching Functions ---
+const fetchRecentOrders = async (): Promise<RecentOrder[]> => {
+  const res = await fetch("/api/admin/orders/recent");
+  if (!res.ok) throw new Error("Failed to fetch recent orders");
+  return res.json();
+};
 
-  // 2. Determine the overall loading and error states for the entire section.
-  const isLoading = !orders && !ordersError && !users && !usersError;
-  const error = ordersError || usersError;
+const fetchRecentUsers = async (): Promise<RecentUser[]> => {
+  const res = await fetch("/api/admin/users/recent");
+  if (!res.ok) throw new Error("Failed to fetch recent users");
+  return res.json();
+};
 
-  // 3. Render a consolidated error state if any data fetch fails.
-  if (error) {
-    return (
-      <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-red-400">
-        <div className="flex items-center">
-          <AlertTriangle className="h-6 w-6 text-red-500 mr-3" />
-          <div>
-            <p className="font-semibold text-red-800">
-              Could not load recent activity
-            </p>
-            <p className="text-sm text-gray-600">{error.message}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+// --- The Main Component ---
+export function RecentActivity() {
+  const { data: orders, isLoading: isLoadingOrders } = useQuery<RecentOrder[]>({
+    queryKey: ["admin-recent-orders"],
+    queryFn: fetchRecentOrders,
+  });
 
-  // 4. Render a skeleton loader while waiting for data. This prevents content layout shifts.
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 p-6 bg-white rounded-lg shadow-md space-y-4">
-          <div className="h-6 w-1/3 bg-gray-200 rounded animate-pulse"></div>
-          <div className="h-14 w-full bg-gray-200 rounded animate-pulse"></div>
-          <div className="h-14 w-full bg-gray-200 rounded animate-pulse"></div>
-        </div>
-        <div className="lg:col-span-1 p-6 bg-white rounded-lg shadow-md space-y-4">
-          <div className="h-6 w-1/2 bg-gray-200 rounded animate-pulse"></div>
-          <div className="h-12 w-full bg-gray-200 rounded animate-pulse"></div>
-          <div className="h-12 w-full bg-gray-200 rounded animate-pulse"></div>
-        </div>
-      </div>
-    );
-  }
+  const { data: users, isLoading: isLoadingUsers } = useQuery<RecentUser[]>({
+    queryKey: ["admin-recent-users"],
+    queryFn: fetchRecentUsers,
+  });
 
-  // 5. Once loaded, render the child components, passing the now-validated data as props.
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      <div className="lg:col-span-2">
-        <RecentOrders orders={orders} />
+    <div className="space-y-8">
+      <div>
+        <h3 className="text-md font-medium">Recent Orders</h3>
+        <div className="mt-4 space-y-4">
+          {isLoadingOrders && <p>Loading orders...</p>}
+          {orders?.map((order) => (
+            <div className="flex items-center" key={`order-${order.id}`}>
+              <Avatar className="h-9 w-9">
+                <AvatarFallback>
+                  {order.user?.name?.charAt(0) || "U"}
+                </AvatarFallback>
+              </Avatar>
+              <div className="ml-4 space-y-1">
+                <p className="text-sm font-medium leading-none">
+                  {/* ✅ 2. THE FIX: Safely access user.name with a fallback */}
+                  {order.user?.name || "Deleted User"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {order.user?.email || "No email"}
+                </p>
+              </div>
+              <div className="ml-auto font-medium">
+                +${(order.totalAmount / 100).toFixed(2)}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-      <div className="lg:col-span-1">
-        <NewUsers users={users} />
+
+      <div>
+        <h3 className="text-md font-medium">New Users</h3>
+        <div className="mt-4 space-y-4">
+          {isLoadingUsers && <p>Loading users...</p>}
+          {users?.map((user) => (
+            <div className="flex items-center" key={`user-${user.id}`}>
+              <Avatar className="h-9 w-9">
+                <AvatarFallback>{user.name?.charAt(0) || "?"}</AvatarFallback>
+              </Avatar>
+              <div className="ml-4 space-y-1">
+                <p className="text-sm font-medium leading-none">
+                  {/* Also apply defensive coding here for robustness */}
+                  {user.name || "Unnamed User"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {user.email || "No email"}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

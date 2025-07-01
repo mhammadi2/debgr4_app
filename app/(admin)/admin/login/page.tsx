@@ -1,132 +1,103 @@
-// app/(admin)/admin/login/page.tsx (Revised)
+// File: app/(admin)/admin/login/page.tsx (Corrected and Aligned)
 "use client";
 
-import { useState } from "react";
+import { useState, FormEvent } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { Lock, User, AlertCircle, Shield } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Lock, User, AlertCircle, Shield, Loader2 } from "lucide-react";
 
-export default function AdminLogin() {
-  const [credentials, setCredentials] = useState({
-    username: "", // This can be an email or a unique admin username
-    password: "",
-  });
+export default function AdminLoginPage() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // ✅ IMPROVEMENT: Read the callbackUrl from the URL for a smart redirect.
+  // Defaults to "/admin" if it's not present.
+  const callbackUrl = searchParams.get("callbackUrl") || "/admin";
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    try {
-      // CRUCIAL: We are calling the "admin-credentials" provider specifically.
-      const result = await signIn("admin-credentials", {
-        username: credentials.username,
-        password: credentials.password,
-        redirect: false, // We handle the redirect manually to provide feedback
-      });
+    // ✅ CORRECTION: The provider ID MUST match the one in `lib/auth.ts`.
+    const result = await signIn("credentials-admin", {
+      username: username,
+      password: password,
+      redirect: false, // We handle the redirect manually to show feedback.
+    });
 
-      // --- REVISED ERROR HANDLING ---
-      // The `authorize` function now throws specific errors, which NextAuth passes here.
-      if (result?.error) {
-        // Display the specific error message from the server for better feedback.
-        setError(result.error);
-        setLoading(false);
-        return;
-      }
+    setLoading(false);
 
-      // If there's no error, the user is authenticated as an admin.
-      // Redirect to the admin dashboard.
-      router.push("/admin");
-    } catch (error) {
-      console.error("Admin Login Error:", error);
-      setError("An unexpected error occurred. Please try again.");
-    } finally {
-      setLoading(false);
+    if (result?.error) {
+      // Show the error message returned from the server (e.g., "Invalid username or password").
+      setError(result.error);
+    } else if (result?.ok) {
+      // On success, redirect to the page the admin was trying to access.
+      router.push(callbackUrl);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-gray-800 p-8 rounded-2xl shadow-2xl">
-        <div>
-          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-blue-500">
-            <Shield className="h-6 w-6 text-white" />
-          </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-100">
-            Admin Dashboard
+    <div className="flex min-h-screen items-center justify-center bg-gray-100">
+      <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md">
+        <div className="text-center">
+          <Shield className="mx-auto h-12 w-12 text-blue-600" />
+          <h2 className="mt-4 text-2xl font-bold text-gray-900">
+            Administrator Sign In
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-400">
-            Authorized Personnel Only
+          <p className="mt-2 text-sm text-gray-600">
+            Access the management dashboard.
           </p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+
+        <form className="space-y-6" onSubmit={handleSubmit}>
           {error && (
-            <div className="rounded-md bg-red-900 bg-opacity-50 p-4">
-              <div className="flex">
-                <AlertCircle className="h-5 w-5 text-red-400" />
-                <div className="ml-3">
-                  <p className="text-sm text-red-300">{error}</p>
-                </div>
-              </div>
+            <div className="flex items-center rounded-md bg-red-50 p-3">
+              <AlertCircle className="h-5 w-5 text-red-500" />
+              <p className="ml-3 text-sm font-medium text-red-800">{error}</p>
             </div>
           )}
 
-          <div>
-            <label htmlFor="username" className="sr-only">
-              Username
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                id="username"
-                name="username"
-                type="text"
-                required
-                className="appearance-none rounded-md relative block w-full px-3 py-2 pl-10 border border-gray-600 bg-gray-700 placeholder-gray-400 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder="Admin Username or Email"
-                value={credentials.username}
-                onChange={(e) =>
-                  setCredentials({ ...credentials, username: e.target.value })
-                }
-              />
-            </div>
+          <div className="relative">
+            <User className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+            <input
+              id="username"
+              name="username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Username"
+              required
+              className="w-full rounded-md border-gray-300 py-2 pl-10 pr-3 focus:border-blue-500 focus:ring-blue-500"
+            />
           </div>
 
-          <div>
-            <label htmlFor="password" className="sr-only">
-              Password
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                className="appearance-none rounded-md relative block w-full px-3 py-2 pl-10 border border-gray-600 bg-gray-700 placeholder-gray-400 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder="Password"
-                value={credentials.password}
-                onChange={(e) =>
-                  setCredentials({ ...credentials, password: e.target.value })
-                }
-              />
-            </div>
+          <div className="relative">
+            <Lock className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+            <input
+              id="password"
+              name="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              required
+              className="w-full rounded-md border-gray-300 py-2 pl-10 pr-3 focus:border-blue-500 focus:ring-blue-500"
+            />
           </div>
 
           <div>
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group relative flex w-full justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
             >
-              {loading ? "Authenticating..." : "Sign In"}
+              {loading && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
+              Sign In
             </button>
           </div>
         </form>

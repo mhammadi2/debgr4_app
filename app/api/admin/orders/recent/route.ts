@@ -1,43 +1,51 @@
-// File: app/api/admin/orders/recent/route.ts
+// File: app/api/admin/orders/recent/route.ts (Corrected and Secured)
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuthSession, requireAdmin } from "@/lib/auth";
+// ✅ CORRECTION: We only need `getAuth` from our auth library.
+import { getAuth } from "@/lib/auth";
+import { UserRole } from "@prisma/client";
 
-export async function GET(request: Request) {
+/**
+ * GET: Fetches the 5 most recent orders for the admin dashboard.
+ */
+export async function GET() {
+  // ✅ 1. Authorization: Get the session and verify the user is an admin.
+  // This is the correct way to protect an API route.
+  const session = await getAuth();
+
+  // If there's no session or the user is not an ADMIN, deny access.
+  if (session?.user?.role !== UserRole.ADMIN) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // --- If the check passes, the rest of the function can run ---
   try {
-    // Secure the route: ensure the user is an admin
-    await requireAdmin();
-
-    const orders = await prisma.order.findMany({
-      take: 5, // Get the 5 most recent orders
+    // 2. Database Query: Fetch the recent orders.
+    const recentOrders = await prisma.order.findMany({
+      take: 5, // Limit to the 5 most recent orders
       orderBy: {
-        createdAt: "desc",
+        createdAt: "desc", // Order by creation date, newest first
       },
       include: {
+        // Include related user details for a richer response
         user: {
-          // Include related user data
           select: {
             id: true,
             name: true,
-            image: true,
+            email: true,
           },
         },
       },
     });
 
-    return NextResponse.json(orders);
-  } catch (error: any) {
-    if (error.message.includes("Unauthorized")) {
-      return new NextResponse(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-      });
-    }
-    // Return a generic server error
-    return new NextResponse(
-      JSON.stringify({
-        error: "An error occurred while fetching recent orders.",
-      }),
+    // 3. Success Response: Return the fetched data.
+    return NextResponse.json(recentOrders);
+  } catch (error) {
+    // 4. Error Handling: Catch potential database errors.
+    console.error("Failed to fetch recent orders:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
       { status: 500 }
     );
   }

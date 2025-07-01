@@ -1,20 +1,13 @@
-// File: app/(admin)/admin/layout.tsx (Corrected)
+// File: app/(admin)/layout.tsx (Corrected and Simplified)
 
-import { requireAdmin } from "@/lib/auth"; // This import will now work
-import AdminShell from "@/app/(admin)/admin/_AdminShell";
 import { ReactNode } from "react";
-import { redirect } from "next/navigation";
 
-export default async function AdminLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  // --- ✅ THIS IS THE GUARD ---
-  // We call the function here. It will run before rendering the page.
-  // If the user is not an admin, it will redirect them and stop rendering.
-  await requireAdmin();
-
-  // This code will only be reached if the user is an authenticated admin.
-  return <AdminShell>{children}</AdminShell>;
+// This is the root layout for the entire (admin) route group.
+// It does not need to do anything special. It just needs to pass the children through.
+// The middleware has already secured this entire route group.
+export default function AdminAreaLayout({ children }: { children: ReactNode }) {
+  // Return the children directly.
+  // The specific layout for the admin dashboard (with the shell) is handled
+  // by the more nested layout file: /app/(admin)/admin/layout.tsx.
+  return <>{children}</>;
 }
