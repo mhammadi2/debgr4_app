@@ -1,4 +1,3 @@
-// app/products/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -11,30 +10,32 @@ import { ShoppingCart } from "lucide-react";
 import { toast, Toaster } from "react-hot-toast";
 import CheckoutModal from "@/components/CheckoutModal";
 
-// Product interface definition
+// ✅ FIXED: Complete Product interface matching CartContext
 export interface Product {
   id: number;
   name: string;
   category: string;
   description: string;
-  price: number | string; // Updated to handle both number and string
+  price: number;
   imageUrl?: string;
-  stock?: number;
+  stock: number; // ✅ FIXED: Make required, not optional
+  createdAt?: string; // ✅ ADDED: Optional for API response
+  updatedAt?: string; // ✅ ADDED: Optional for API response
 }
 
 // Placeholder image constant
 const PLACEHOLDER_IMAGE = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==`;
 
 export default function ProductsPage() {
-  // Add state for the checkout modal
+  // State management
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false); // State for checkout modal
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
-  // Get cart and totalPrice from the context
-  const { addToCart, cart, getTotalPrice } = useCart();
+  // ✅ FIXED: Get cart functions from context
+  const { addToCart, cart, getTotalPrice, isHydrated } = useCart();
 
   // Function to resolve image path
   const resolveImagePath = (imagePath?: string): string => {
@@ -62,7 +63,7 @@ export default function ProductsPage() {
     return numericPrice.toFixed(2);
   };
 
-  // Fetch products logic
+  // ✅ FIXED: Enhanced fetch with better error handling
   useEffect(() => {
     const fetchProducts = async () => {
       setLoading(true);
@@ -76,18 +77,40 @@ export default function ProductsPage() {
         }
 
         const data = await response.json();
-        console.log("Fetched products data:", data);
+        console.log("Raw API response:", data); // ✅ DEBUG LOG
 
-        // Process the data to ensure prices are handled correctly
-        const processedData = data.map((product: any) => ({
-          ...product,
-          // Ensure price is a number - might come as string from JSON
-          price:
-            typeof product.price === "string"
-              ? parseFloat(product.price)
-              : product.price,
-        }));
+        // ✅ FIXED: Validate and process each product
+        const processedData = data.map((product: any, index: number) => {
+          // ✅ FIXED: Validate each product
+          if (!product.id) {
+            console.error(`Product at index ${index} missing ID:`, product);
+          }
+          if (!product.name) {
+            console.error(`Product at index ${index} missing name:`, product);
+          }
+          if (product.price === undefined || product.price === null) {
+            console.error(`Product at index ${index} missing price:`, product);
+          }
 
+          return {
+            ...product,
+            // Ensure required fields have defaults
+            id: product.id || 0,
+            name: product.name || "Unknown Product",
+            category: product.category || "Unknown",
+            description: product.description || "",
+            price:
+              typeof product.price === "string"
+                ? parseFloat(product.price)
+                : product.price || 0,
+            imageUrl: product.imageUrl || "",
+            stock: product.stock || 0,
+            createdAt: product.createdAt || new Date().toISOString(),
+            updatedAt: product.updatedAt || new Date().toISOString(),
+          };
+        });
+
+        console.log("Processed products:", processedData); // ✅ DEBUG LOG
         setProducts(processedData);
       } catch (err) {
         console.error("Error fetching products:", err);
@@ -101,24 +124,60 @@ export default function ProductsPage() {
     fetchProducts();
   }, []);
 
-  // Handle adding product to cart
+  // ✅ FIXED: Handle adding product to cart with proper Product interface
   const handleAddToCart = (product: Product) => {
     try {
+      // ✅ FIXED: Validate product data first
+      if (!product) {
+        toast.error("Invalid product");
+        return;
+      }
+
+      if (!product.id || product.id === null || product.id === undefined) {
+        toast.error("Product ID is missing");
+        console.error("Product missing ID:", product);
+        return;
+      }
+
+      if (!product.name) {
+        toast.error("Product name is missing");
+        return;
+      }
+
+      if (
+        product.price === undefined ||
+        product.price === null ||
+        isNaN(product.price)
+      ) {
+        toast.error("Product price is invalid");
+        return;
+      }
+
       if (product.stock !== undefined && product.stock <= 0) {
         toast.error("This product is out of stock");
         return;
       }
 
-      // Make sure price is a number when adding to cart
-      const productWithNumericPrice = {
-        ...product,
+      // ✅ FIXED: Create proper Product object (not CartItem)
+      const productForCart: Product = {
+        id: product.id,
+        name: product.name,
+        category: product.category || "Unknown",
+        description: product.description || "",
         price:
           typeof product.price === "string"
             ? parseFloat(product.price)
             : product.price,
+        imageUrl: product.imageUrl || "",
+        stock: product.stock || 0,
+        createdAt: product.createdAt || new Date().toISOString(),
+        updatedAt: product.updatedAt || new Date().toISOString(),
       };
 
-      addToCart(productWithNumericPrice, 1);
+      console.log("Adding product to cart:", productForCart); // ✅ DEBUG LOG
+
+      // ✅ FIXED: Pass Product object to addToCart (not CartItem)
+      addToCart(productForCart, 1);
       toast.success(`${product.name} added to cart`);
     } catch (error) {
       console.error("Error adding to cart:", error);
@@ -129,6 +188,28 @@ export default function ProductsPage() {
   // Toggle cart sidebar
   const toggleCart = () => {
     setIsCartOpen(!isCartOpen);
+  };
+
+  // ✅ FIXED: Handle checkout with proper error handling
+  const handleCheckout = () => {
+    if (!isHydrated) {
+      toast.error("Please wait, loading cart...");
+      return;
+    }
+
+    if (cart.length === 0) {
+      toast.error("Your cart is empty");
+      return;
+    }
+
+    const totalPrice = getTotalPrice();
+    if (totalPrice <= 0) {
+      toast.error("Invalid cart total");
+      return;
+    }
+
+    setIsCartOpen(false);
+    setIsCheckoutOpen(true);
   };
 
   // Loading and Error states
@@ -149,6 +230,12 @@ export default function ProductsPage() {
       <div className="text-red-500 text-center py-10">
         <p>Error: {error}</p>
         <p>Please try again later.</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Reload Page
+        </button>
       </div>
     );
   }
@@ -161,30 +248,29 @@ export default function ProductsPage() {
         className="fixed top-20 right-4 z-[60] bg-green-500 text-white p-3 rounded-full shadow-lg hover:bg-green-600 transition flex items-center justify-center"
       >
         <ShoppingCart size={20} />
-        {cart.length > 0 && (
+        {isHydrated && cart.length > 0 && (
           <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
             {cart.length}
           </span>
         )}
       </button>
 
-      {/* Update CartSidebar props */}
+      {/* ✅ FIXED: CartSidebar with proper props */}
       <CartSidebar
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
-        onCheckout={() => {
-          setIsCartOpen(false);
-          setIsCheckoutOpen(true);
-        }}
+        onCheckout={handleCheckout}
       />
 
-      {/* Render the CheckoutModal at the page level */}
-      <CheckoutModal
-        isOpen={isCheckoutOpen}
-        onClose={() => setIsCheckoutOpen(false)}
-        cart={cart}
-        totalAmount={getTotalPrice()}
-      />
+      {/* ✅ FIXED: CheckoutModal with proper conditional rendering */}
+      {isCheckoutOpen && isHydrated && (
+        <CheckoutModal
+          isOpen={isCheckoutOpen}
+          onClose={() => setIsCheckoutOpen(false)}
+          cart={cart}
+          totalAmount={getTotalPrice()}
+        />
+      )}
 
       {/* Toaster for notifications */}
       <Toaster position="top-right" />

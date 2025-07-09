@@ -1,70 +1,83 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuthSession, requireAdmin } from "@/lib/auth";
+import { getAuth, requireAdmin } from "@/lib/auth";
 
 export async function GET() {
   try {
-    await requireAdmin();
-    const session = await getAuthSession();
+    const adminUser = await requireAdmin();
 
-    const user = await prisma.user.findUnique({
-      where: { id: session!.user.id },
+    // Check if adminUser is a NextResponse (error case)
+    if (adminUser instanceof NextResponse) {
+      return adminUser;
+    }
+
+    // At this point we have a valid admin user
+    const admin = await prisma.admin.findUnique({
+      where: { id: adminUser.id },
       select: {
         id: true,
-        name: true,
-        email: true,
-        createdAt: true,
+        username: true,
         role: true,
+        // Don't include passwordHash for security
       },
     });
 
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (!admin) {
+      return NextResponse.json({ error: "Admin not found" }, { status: 404 });
     }
 
-    return NextResponse.json(user);
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({
+      id: admin.id,
+      name: admin.username, // Using username as name
+      email: admin.username, // Since you're using username instead of email
+      role: admin.role,
+    });
+  } catch (error) {
+    console.error("Admin profile error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
 
 export async function PUT(req: Request) {
   try {
-    await requireAdmin();
-    const session = await getAuthSession();
-    const body = (await req.json()) as { name: string; email: string };
+    const adminUser = await requireAdmin();
 
-    if (!body.name || !body.email)
-      return NextResponse.json(
-        { error: "Name and email are required" },
-        { status: 400 }
-      );
-
-    // Check email uniqueness
-    const existing = await prisma.user.findUnique({
-      where: { email: body.email },
-    });
-    if (existing && existing.id !== session!.user.id) {
-      return NextResponse.json(
-        { error: "Email already in use" },
-        { status: 400 }
-      );
+    // Check if adminUser is a NextResponse (error case)
+    if (adminUser instanceof NextResponse) {
+      return adminUser;
     }
 
-    const updated = await prisma.user.update({
-      where: { id: session!.user.id },
-      data: { name: body.name, email: body.email },
+    const data = await req.json();
+    const { name, email } = data;
+
+    // For admins, you might want to update username instead of name/email
+    // Adjust this based on your admin schema
+    const admin = await prisma.admin.update({
+      where: { id: adminUser.id },
+      data: {
+        username: email, // Using email as username since that's what you're displaying
+      },
       select: {
         id: true,
-        name: true,
-        email: true,
-        createdAt: true,
+        username: true,
         role: true,
       },
     });
 
-    return NextResponse.json(updated);
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({
+      id: admin.id,
+      name: admin.username,
+      email: admin.username,
+      role: admin.role,
+    });
+  } catch (error) {
+    console.error("Update admin profile error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }

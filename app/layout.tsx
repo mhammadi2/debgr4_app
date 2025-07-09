@@ -1,13 +1,8 @@
-// File: app/layout.tsx (Corrected)
-
 import "@/app/globals.css";
 import { ReactNode } from "react";
 import { Providers } from "./providers";
-import { Navbar } from "@/components/ui/navbar"; // Correctly import the Navbar Server Component
-
-// --- ✅ CORRECTED IMPORT ---
-// Import our new, reliable helper function 'getAuth' instead of 'auth'.
-import { getAuth } from "@/lib/auth";
+import { Navbar } from "@/components/ui/navbar"; // ✅ CORRECT: Use the wrapper component
+import { getAuthSession } from "@/lib/auth";
 
 export const metadata = {
   title: "DeBugR4 - IC & Electronic Design",
@@ -20,16 +15,16 @@ export default async function RootLayout({
 }: {
   children: ReactNode;
 }) {
-  // --- ✅ CORRECTED FUNCTION CALL ---
-  // Call our new 'getAuth' helper to fetch the session on the server.
-  const session = await getAuth();
+  // ✅ CORRECT: Fetch session here to pass to SessionProvider
+  const session = await getAuthSession();
 
   return (
     <html lang="en">
       <body>
+        {/* ✅ CORRECT: Session is passed to Providers and made available via SessionProvider */}
         <Providers session={session}>
           <Navbar />
-          <main className="pt-36">{children}</main>
+          <main className="pt-24 md:pt-28">{children}</main>
         </Providers>
       </body>
     </html>

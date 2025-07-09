@@ -8,23 +8,24 @@ import {
   BarElement,
   LineElement,
   PointElement,
+  ArcElement, // ⬅️  NEW
   Title,
   Tooltip,
   Legend,
 } from "chart.js";
 
-// Register ChartJS components
 ChartJS.register(
   CategoryScale,
   LinearScale,
   BarElement,
   LineElement,
   PointElement,
+  ArcElement, // ⬅️  NEW
   Title,
   Tooltip,
   Legend
 );
 
 export default function ChartSetup() {
-  return null; // This component only registers Chart.js components
+  return null; // registers once, renders nothing
 }

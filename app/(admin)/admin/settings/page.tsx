@@ -16,18 +16,27 @@ import {
   Shield,
 } from "lucide-react";
 
-const fetcher = (url: string) =>
-  fetch(url).then(async (r) => {
-    const json = await r.json();
-    if (!r.ok) throw new Error(json.error ?? "Request error");
-    return json;
-  });
+// Enhanced fetcher with better error handling
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) {
+    // Extract error message properly
+    const errorData = await res.json().catch(() => ({}));
+    const errorMessage = errorData.error || `Error: ${res.status}`;
+    throw new Error(errorMessage);
+  }
+  return res.json();
+};
 
 export default function AdminSettings() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const { data, error, mutate, isLoading } = useSWR(
-    session ? "/api/admin/profile" : null,
-    fetcher
+    status === "authenticated" ? "/api/admin/profile" : null,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      shouldRetryOnError: false,
+    }
   );
 
   // profile form
@@ -62,11 +71,17 @@ export default function AdminSettings() {
     e.preventDefault();
     setSaving(true);
     try {
-      await fetch("/api/admin/profile", {
+      const response = await fetch("/api/admin/profile", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(profile),
-      }).then(fetcher);
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to update profile");
+      }
+
       await mutate();
       setEditing(false);
       setMsg({ ok: true, text: "Profile updated" });
@@ -86,14 +101,20 @@ export default function AdminSettings() {
 
     setPwdSaving(true);
     try {
-      await fetch("/api/admin/change-password", {
+      const response = await fetch("/api/admin/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           currentPassword: pwd.cur,
           newPassword: pwd.next,
         }),
-      }).then(fetcher);
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to change password");
+      }
+
       setPwd({ cur: "", next: "", confirm: "" });
       setMsg({ ok: true, text: "Password changed" });
     } catch (e: any) {
@@ -103,7 +124,25 @@ export default function AdminSettings() {
     }
   };
 
-  if (!session) return null;
+  // Show loading state when session is loading
+  if (status === "loading") {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="animate-spin h-8 w-8 text-gray-400" />
+      </div>
+    );
+  }
+
+  // Redirect or show unauthorized message if not authenticated
+  if (status === "unauthenticated") {
+    return (
+      <div className="p-6 text-center">
+        <AlertCircle className="h-10 w-10 text-red-500 mx-auto mb-4" />
+        <h2 className="text-xl font-medium mb-2">Not authorized</h2>
+        <p className="text-gray-600">Please sign in to access this page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -132,7 +171,7 @@ export default function AdminSettings() {
               Update your personal information
             </p>
           </div>
-          {!editing && (
+          {!editing && data && (
             <button
               onClick={() => setEditing(true)}
               className="text-blue-600 text-sm"
@@ -143,8 +182,11 @@ export default function AdminSettings() {
         </div>
 
         {error && (
-          <p className="text-sm text-red-600">Failed to load profile</p>
+          <p className="text-sm text-red-600">
+            {error.message || "Failed to load profile"}
+          </p>
         )}
+
         {isLoading && (
           <div className="flex items-center space-x-2">
             <Loader2 className="animate-spin" size={18} />
@@ -152,7 +194,7 @@ export default function AdminSettings() {
           </div>
         )}
 
-        {!isLoading && !error && (
+        {!isLoading && !error && data && (
           <form onSubmit={saveProfile} className="space-y-4">
             <div className="relative">
               <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />

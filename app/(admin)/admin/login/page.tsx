@@ -1,4 +1,3 @@
-// File: app/(admin)/admin/login/page.tsx (Corrected and Aligned)
 "use client";
 
 import { useState, FormEvent } from "react";
@@ -14,8 +13,6 @@ export default function AdminLoginPage() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  // ✅ IMPROVEMENT: Read the callbackUrl from the URL for a smart redirect.
-  // Defaults to "/admin" if it's not present.
   const callbackUrl = searchParams.get("callbackUrl") || "/admin";
 
   const handleSubmit = async (e: FormEvent) => {
@@ -23,37 +20,34 @@ export default function AdminLoginPage() {
     setLoading(true);
     setError("");
 
-    // ✅ CORRECTION: The provider ID MUST match the one in `lib/auth.ts`.
     const result = await signIn("credentials-admin", {
-      username: username,
-      password: password,
-      redirect: false, // We handle the redirect manually to show feedback.
+      username,
+      password,
+      redirect: false,
     });
 
     setLoading(false);
 
-    if (result?.error) {
-      // Show the error message returned from the server (e.g., "Invalid username or password").
-      setError(result.error);
-    } else if (result?.ok) {
-      // On success, redirect to the page the admin was trying to access.
-      router.push(callbackUrl);
-    }
+    if (result?.error) setError(result.error);
+    else if (result?.ok) router.push(callbackUrl);
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100">
+    /* 24 px top padding = clears ±64 px fixed navbar (adjust if needed) */
+    <main className="flex min-h-screen items-center justify-center bg-gray-100 pt-24 px-4">
       <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md">
+        {/* header */}
         <div className="text-center">
           <Shield className="mx-auto h-12 w-12 text-blue-600" />
-          <h2 className="mt-4 text-2xl font-bold text-gray-900">
+          <h1 className="mt-4 text-2xl font-bold text-gray-900">
             Administrator Sign In
-          </h2>
+          </h1>
           <p className="mt-2 text-sm text-gray-600">
             Access the management dashboard.
           </p>
         </div>
 
+        {/* form */}
         <form className="space-y-6" onSubmit={handleSubmit}>
           {error && (
             <div className="flex items-center rounded-md bg-red-50 p-3">
@@ -90,18 +84,16 @@ export default function AdminLoginPage() {
             />
           </div>
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative flex w-full justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
-            >
-              {loading && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
-              Sign In
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="group relative flex w-full justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+          >
+            {loading && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
+            Sign In
+          </button>
         </form>
       </div>
-    </div>
+    </main>
   );
 }

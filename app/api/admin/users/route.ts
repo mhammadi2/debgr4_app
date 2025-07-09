@@ -1,37 +1,25 @@
-// File: app/api/admin/users/route.ts (Corrected and Aligned with Schema)
-
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getAuth } from "@/lib/auth";
+// app/api/admin/users/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db"; // <-- same alias you use elsewhere
+import { requireAdmin } from "@/lib/auth"; // <-- the correct helper
 import { UserRole, UserStatus } from "@prisma/client";
 
-/**
- * GET: Fetch all users.
- * This function is called to populate the user management panel.
- */
-export async function GET() {
-  const session = await getAuth();
-
-  // ✅ CORRECTION: Simplified authorization check.
-  // The logic now correctly checks if the user's role is exactly `ADMIN`.
-  if (session?.user.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { error: "Forbidden: Requires admin access." },
-      { status: 403 }
-    );
-  }
+/* ──────────────────────────────────────────────────────────────
+   GET /api/admin/users
+   Returns a list of non-admin users for the admin dashboard.
+   Access: ADMIN only
+   ────────────────────────────────────────────────────────────── */
+export async function GET(_req: NextRequest) {
+  const authCheck = await requireAdmin();
+  if (authCheck instanceof NextResponse) return authCheck; // 401 / 403 already set
 
   try {
-    // ✅ IMPROVEMENT: The query now specifically excludes other admins from the list.
-    // This prevents admins from appearing in the user management UI.
     const users = await prisma.user.findMany({
-      where: {
-        role: { not: UserRole.ADMIN },
-      },
+      where: { role: { not: UserRole.ADMIN } }, // hide fellow admins
       select: {
         id: true,
-        email: true,
         name: true,
+        email: true,
         role: true,
         status: true,
         createdAt: true,
@@ -41,36 +29,31 @@ export async function GET() {
     });
 
     return NextResponse.json(users);
-  } catch (error) {
-    console.error("Failed to fetch users:", error);
+  } catch (err: any) {
+    console.error("❌ /api/admin/users GET error:", err);
     return NextResponse.json(
-      { error: "Internal Server Error" },
+      { error: "Failed to fetch users", message: err.message },
       { status: 500 }
     );
   }
 }
 
-/**
- * PUT: Update a user's role or status.
- */
-export async function PUT(request: Request) {
-  const session = await getAuth();
-
-  // ✅ CORRECTION: Simplified authorization check.
-  if (session?.user.role !== UserRole.ADMIN) {
-    return NextResponse.json(
-      { error: "Forbidden: Requires admin access." },
-      { status: 403 }
-    );
-  }
+/* ──────────────────────────────────────────────────────────────
+   PUT /api/admin/users
+   Updates a user’s role or status (non-admin accounts only)
+   Body: { id: string, role: UserRole, status: UserStatus }
+   Access: ADMIN only
+   ────────────────────────────────────────────────────────────── */
+export async function PUT(req: NextRequest) {
+  const authCheck = await requireAdmin();
+  if (authCheck instanceof NextResponse) return authCheck;
 
   try {
-    const {
-      id,
-      role,
-      status,
-    }: { id: string; role: UserRole; status: UserStatus } =
-      await request.json();
+    const { id, role, status } = (await req.json()) as {
+      id?: string;
+      role?: UserRole;
+      status?: UserStatus;
+    };
 
     if (!id || !role || !status) {
       return NextResponse.json(
@@ -79,39 +62,37 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Security: Prevent an admin from modifying their own account through this panel.
-    if (id === session.user.id) {
+    /* Prevent an admin from editing them-selves */
+    if (id === authCheck.user.id) {
       return NextResponse.json(
-        { error: "Cannot modify your own account." },
+        { error: "You cannot modify your own account" },
         { status: 403 }
       );
     }
 
-    const userToUpdate = await prisma.user.findUnique({ where: { id } });
-    if (!userToUpdate) {
-      return NextResponse.json({ error: "User not found." }, { status: 404 });
+    const existing = await prisma.user.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // ✅ CORRECTION: Simplified and more secure role hierarchy logic.
-    // This rule prevents an ADMIN from promoting a regular USER to ADMIN status.
-    // It also prevents the modification of any account that is already an ADMIN.
-    if (userToUpdate.role === UserRole.ADMIN || role === UserRole.ADMIN) {
+    /* Never allow this endpoint to create or edit ADMIN accounts */
+    if (existing.role === UserRole.ADMIN || role === UserRole.ADMIN) {
       return NextResponse.json(
-        { error: "This panel cannot be used to manage admin roles." },
+        { error: "Admin roles cannot be modified from this panel" },
         { status: 403 }
       );
     }
 
-    const updatedUser = await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id },
       data: { role, status },
     });
 
-    return NextResponse.json(updatedUser);
-  } catch (error) {
-    console.error("Update user error:", error);
+    return NextResponse.json(updated);
+  } catch (err: any) {
+    console.error("❌ /api/admin/users PUT error:", err);
     return NextResponse.json(
-      { error: "Failed to update user" },
+      { error: "Failed to update user", message: err.message },
       { status: 500 }
     );
   }

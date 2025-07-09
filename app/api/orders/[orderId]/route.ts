@@ -1,77 +1,79 @@
-// app/api/orders/[orderId]/route.ts (Revised for Security and Correctness)
-
+// app/api/orders/[orderId]/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth"; // Correct, reusable import path for auth options
+import { prisma } from "@/lib/db";
+import { getAuthSession } from "@/lib/auth";
 
-export async function GET(
-  request: NextRequest, // The 'request' object is needed to resolve the params stream
-  { params }: { params: { orderId: string } }
-) {
-  // --- FIX 1: Resolve the request stream before accessing params ---
-  // This line is required in modern Next.js to prevent the 'sync-dynamic-apis' error.
-  await request.text();
+interface Ctx {
+  params: { orderId: string };
+}
+
+export async function GET(_req: NextRequest, ctx: Ctx) {
+  /* 1️⃣  Respect Next.js requirement: await params */
+  const { orderId: param } = await Promise.resolve(ctx.params);
+
+  if (!param) {
+    return NextResponse.json(
+      { error: "orderId is required in the route" },
+      { status: 400 }
+    );
+  }
 
   try {
-    const { orderId } = params;
+    const session = await getAuthSession();
 
-    if (!orderId) {
-      return NextResponse.json(
-        { error: "Order ID is required" },
-        { status: 400 }
-      );
-    }
+    console.log("🔍 Order lookup:", {
+      orderId: param,
+      hasSession: !!session,
+      userId: session?.user?.id,
+    });
 
-    const session = await getServerSession(authOptions);
+    /* 2️⃣  Decide which column to query */
+    const where = param.startsWith("ORD-")
+      ? { orderId: param } // friendly public id
+      : { id: param }; // database primary key
 
-    // Users must be logged in to view any order.
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "Unauthorized. Please log in." },
-        { status: 401 }
-      );
-    }
-
-    // --- FIX 2: Build a secure database query ---
-    // This query object will be used to find the order.
-    const whereClause: { orderId: string; customerEmail?: string } = {
-      orderId: orderId,
-    };
-
-    // If the user is NOT an admin, we add a condition to the query
-    // to ensure they can only access their own orders.
-    if (session.user.role !== "admin") {
-      whereClause.customerEmail = session.user.email;
-    }
-
-    // Now, execute the single, secure query.
+    /* 3️⃣  Fetch the order */
     const order = await prisma.order.findFirst({
-      where: whereClause, // The query is now conditional based on user role
+      where,
       include: {
+        orderItems: { include: { product: true } },
         shippingAddress: true,
-        orderItems: true,
-        transactions: {
-          orderBy: {
-            createdAt: "desc",
-          },
-        },
       },
     });
 
-    // If the query returns nothing, it means the order doesn't exist OR the user
-    // doesn't have permission to view it. We return a 404 in either case
-    // to avoid leaking information about which order IDs exist.
     if (!order) {
-      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+      console.log("❌ Order not found in database");
+      return NextResponse.json(
+        {
+          error: "Order not found",
+          details: "This order does not exist in our system.",
+        },
+        { status: 404 }
+      );
     }
 
-    // If we get here, the user is authorized. Return the order.
+    /* 4️⃣  Authorisation checks */
+    const isAdmin = session?.user?.role === "ADMIN";
+    const isOwner = session?.user?.id && order.userId === session.user.id;
+    const isGuest = !order.userId;
+
+    if (!(isAdmin || isOwner || isGuest)) {
+      console.log("❌ Access denied");
+      return NextResponse.json(
+        {
+          error: "Order not found",
+          details: "You don't have permission to view this order.",
+        },
+        { status: 404 }
+      );
+    }
+
+    console.log("✅ Access granted, returning order");
     return NextResponse.json(order);
-  } catch (error) {
-    console.error(`[ORDER_FETCH_ERROR] OrderID: ${params.orderId}`, error);
+  } catch (err: any) {
+    console.error(`API error fetching order "${param}":`, err);
     return NextResponse.json(
-      { error: "An internal error occurred while fetching the order." },
+      { error: "Internal Server Error", message: err.message },
       { status: 500 }
     );
   }

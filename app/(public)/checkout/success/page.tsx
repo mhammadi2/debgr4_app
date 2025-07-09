@@ -2,24 +2,37 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, AlertCircle } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 
+// Define types for better type safety
+interface OrderDetails {
+  id?: string;
+  customer?: {
+    email: string;
+    name?: string;
+  };
+  amount?: number;
+  status?: string;
+}
+
 export default function CheckoutSuccessPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session_id");
   const orderId = searchParams.get("order_id");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [orderDetails, setOrderDetails] = useState<any | null>(null);
+  const [orderDetails, setOrderDetails] = useState<OrderDetails | null>(null);
 
   const { clearCart } = useCart();
 
   useEffect(() => {
-    if (!sessionId) {
-      setError("Invalid checkout session");
+    // Check for both sessionId and orderId
+    if (!sessionId || !orderId) {
+      setError("Invalid checkout session or order ID");
       setLoading(false);
       return;
     }
@@ -29,23 +42,27 @@ export default function CheckoutSuccessPage() {
         const response = await fetch(
           `/api/verify-payment?session_id=${sessionId}`
         );
-        if (!response.ok) throw new Error("Failed to verify payment");
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to verify payment");
+        }
 
         const data = await response.json();
         setOrderDetails(data);
 
         // Clear the cart after successful payment
         clearCart();
-      } catch (err) {
-        setError("Failed to fetch order details");
-        console.error(err);
+      } catch (err: any) {
+        setError(err.message || "Failed to fetch order details");
+        console.error("Payment verification error:", err);
       } finally {
         setLoading(false);
       }
     };
 
     fetchOrderDetails();
-  }, [sessionId, clearCart]);
+  }, [sessionId, orderId, clearCart]);
 
   if (loading) {
     return (
@@ -59,14 +76,19 @@ export default function CheckoutSuccessPage() {
     return (
       <div className="max-w-lg mx-auto py-12 px-4">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-          <h1 className="text-xl font-bold text-red-700 mb-4">Payment Error</h1>
-          <p className="text-red-600 mb-6">{error}</p>
-          <Link
-            href="/products"
-            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-          >
-            Return to Shop
-          </Link>
+          <div className="flex items-center justify-center mb-4">
+            <AlertCircle className="w-10 h-10 text-red-500 mr-2" />
+            <h1 className="text-xl font-bold text-red-700">Payment Error</h1>
+          </div>
+          <p className="text-red-600 mb-6 text-center">{error}</p>
+          <div className="flex justify-center">
+            <Link
+              href="/products"
+              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+            >
+              Return to Shop
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -99,6 +121,12 @@ export default function CheckoutSuccessPage() {
               <span className="font-medium">Email:</span>{" "}
               {orderDetails?.customer?.email || "Not available"}
             </p>
+            {orderDetails?.amount && (
+              <p>
+                <span className="font-medium">Total:</span> $
+                {(orderDetails.amount / 100).toFixed(2)}
+              </p>
+            )}
           </div>
         </div>
 

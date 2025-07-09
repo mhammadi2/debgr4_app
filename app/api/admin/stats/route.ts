@@ -1,45 +1,57 @@
-// File: app/api/admin/stats/route.ts (Corrected and Secured)
-
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getAuth } from "@/lib/auth";
-import { UserRole } from "@prisma/client";
+// app/api/admin/stats/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { requireAdmin } from "@/lib/auth";
 
 /**
- * GET: Fetches aggregate statistics for the admin dashboard.
- * This endpoint is protected and only accessible by admins.
+ * GET /api/admin/stats
+ * Returns { totalUsers, totalOrders, totalRevenue }
+ * Access: ADMIN only  (checked by `requireAdmin`)
  */
-export async function GET() {
-  // 1. Authorization: Secure the endpoint.
-  const session = await getAuth();
-  if (session?.user?.role !== UserRole.ADMIN) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function GET(_req: NextRequest) {
+  /* ──────────────────────────────────────────────
+     1. Authorisation
+     ────────────────────────────────────────────── */
+  const authCheck = await requireAdmin();
+  if (authCheck instanceof NextResponse) {
+    // `requireAdmin` already built the 401/403 response for us
+    return authCheck;
   }
 
+  /* ──────────────────────────────────────────────
+     2. Aggregate queries (run in parallel)
+     ────────────────────────────────────────────── */
   try {
-    // 2. Database Query: Fetch the required data.
-    const userCount = await prisma.user.count();
-    const orderCount = await prisma.order.count();
-    const totalRevenue = await prisma.order.aggregate({
-      _sum: {
-        // ✅ CORRECTION: Use the correct field name from your schema.
-        // It is most likely `totalAmount`, not `total`.
-        totalAmount: true,
-      },
-    });
+    const [totalUsers, totalOrders, revenueAgg] = await Promise.all([
+      prisma.user.count(), // ← count EVERY user
+      prisma.order.count(), // ← all orders, no filter
+      prisma.order.aggregate({
+        _sum: {
+          totalAmount: true,
+        },
+        where: { paymentStatus: "PAID" }, // ← only paid orders contribute
+      }),
+    ]);
 
-    // 3. Success Response: Return the fetched statistics.
+    // Prisma.Decimal → number (or string if you prefer)
+    const totalRevenueRaw = revenueAgg._sum.totalAmount ?? 0;
+    const totalRevenue =
+      typeof totalRevenueRaw === "object" && "toNumber" in totalRevenueRaw
+        ? (totalRevenueRaw as unknown as { toNumber: () => number }).toNumber()
+        : Number(totalRevenueRaw);
+
+    /* ────────────────────────────────────────────
+       3. Success response
+       ──────────────────────────────────────────── */
     return NextResponse.json({
-      userCount,
-      orderCount,
-      // ✅ CORRECTION: Access the result using the same correct field name.
-      totalRevenue: totalRevenue._sum.totalAmount || 0,
+      totalUsers,
+      totalOrders,
+      totalRevenue,
     });
-  } catch (error) {
-    // 4. Error Handling
-    console.error("Failed to fetch admin statistics:", error);
+  } catch (err: any) {
+    console.error("❌ /api/admin/stats error:", err);
     return NextResponse.json(
-      { error: "Internal Server Error" },
+      { error: "Failed to fetch admin statistics", message: err.message },
       { status: 500 }
     );
   }

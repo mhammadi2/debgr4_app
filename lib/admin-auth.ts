@@ -4,7 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 
-// Predefined admin accounts (you can also store these in database)
+// Predefined admin accounts
 const ADMIN_ACCOUNTS = [
   {
     id: "admin-1",

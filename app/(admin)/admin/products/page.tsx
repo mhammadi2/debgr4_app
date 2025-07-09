@@ -1,4 +1,3 @@
-// app/admin/products/page.tsx (COMPLETE UPDATED VERSION)
 "use client";
 
 import { useState, useRef, FormEvent, ChangeEvent } from "react";
@@ -13,6 +12,10 @@ import {
   X,
   Loader2,
   UploadCloud,
+  Filter,
+  Eye,
+  EyeOff,
+  RefreshCw,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -62,11 +65,18 @@ export default function ProductsManagementPage() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
+  // ✅ ADDED: Stock filter options
+  const [stockFilter, setStockFilter] = useState<
+    "all" | "in-stock" | "out-of-stock" | "low-stock"
+  >("all");
+  const [showOutOfStock, setShowOutOfStock] = useState(true);
+
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState<number | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
 
@@ -78,31 +88,62 @@ export default function ProductsManagementPage() {
     stock: "",
   });
 
-  // Using selectedFile instead of imageFile for consistency with ProductForm
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const categories = [...new Set(products?.map((p) => p.category) || [])];
 
+  // ✅ IMPROVED: Enhanced filtering with stock options
   const filteredProducts =
-    products?.filter(
-      (p) =>
-        (!searchTerm ||
-          p.name.toLowerCase().includes(searchTerm.toLowerCase())) &&
-        (!categoryFilter || p.category === categoryFilter)
-    ) || [];
+    products?.filter((p) => {
+      // Search filter
+      const matchesSearch =
+        !searchTerm ||
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.category.toLowerCase().includes(searchTerm.toLowerCase());
 
-  // Function to resolve image path - same as in ProductForm
+      // Category filter
+      const matchesCategory = !categoryFilter || p.category === categoryFilter;
+
+      // Stock filter
+      const matchesStock = (() => {
+        switch (stockFilter) {
+          case "in-stock":
+            return p.stock > 0;
+          case "out-of-stock":
+            return p.stock === 0;
+          case "low-stock":
+            return p.stock > 0 && p.stock <= 5;
+          default:
+            return true;
+        }
+      })();
+
+      // Show/hide out of stock toggle
+      const matchesOutOfStockToggle = showOutOfStock || p.stock > 0;
+
+      return (
+        matchesSearch &&
+        matchesCategory &&
+        matchesStock &&
+        matchesOutOfStockToggle
+      );
+    }) || [];
+
+  // ✅ ADDED: Get counts for different stock levels
+  const stockCounts = {
+    total: products?.length || 0,
+    inStock: products?.filter((p) => p.stock > 0).length || 0,
+    outOfStock: products?.filter((p) => p.stock === 0).length || 0,
+    lowStock: products?.filter((p) => p.stock > 0 && p.stock <= 5).length || 0,
+  };
+
   const resolveImagePath = (imagePath?: string | null): string => {
     if (!imagePath) return PLACEHOLDER_IMAGE;
-
-    // Handle both absolute and relative paths
     if (imagePath.startsWith("http")) {
       return imagePath;
     }
-
-    // Ensure no double slashes and clean up path
     return `/${imagePath.replace(/^\/+/, "")}`;
   };
 
@@ -128,8 +169,6 @@ export default function ProductsManagementPage() {
     if (file) {
       setSelectedFile(file);
       setImagePreview(URL.createObjectURL(file));
-
-      // Log for debugging
       setDebugInfo(
         `Selected file: ${file.name}, size: ${(file.size / 1024).toFixed(2)} KB`
       );
@@ -168,45 +207,27 @@ export default function ProductsManagementPage() {
     const method = editingProduct ? "PUT" : "POST";
 
     try {
-      // Create FormData object for multipart/form-data submission
       const formData = new FormData();
-
-      // Add all form fields
       formData.append("name", formState.name);
       formData.append("description", formState.description || "");
       formData.append("price", formState.price);
       formData.append("category", formState.category);
       formData.append("stock", formState.stock || "0");
 
-      // Add ID for edit mode
       if (editingProduct) {
         formData.append("id", String(editingProduct.id));
       }
 
-      // Handle image - CRITICAL: Use "file" field name to match the api/upload endpoint
       if (selectedFile) {
         formData.append("file", selectedFile);
       } else if (editingProduct?.imageUrl) {
-        // Existing image URL (for edit mode)
         formData.append("imageUrl", editingProduct.imageUrl);
         formData.append("keepExistingImage", "true");
       }
 
-      // Log form fields for debugging
-      let formFields = "";
-      for (const [key, value] of formData.entries()) {
-        if (value instanceof File) {
-          formFields += `${key}: [File ${value.name}], `;
-        } else {
-          formFields += `${key}: ${value}, `;
-        }
-      }
-      console.log("Submitting form with:", formFields);
-
-      // Make the API request
       const res = await fetch(url, {
         method,
-        body: formData, // No headers - browser sets them correctly with boundary
+        body: formData,
       });
 
       if (!res.ok) {
@@ -217,7 +238,6 @@ export default function ProductsManagementPage() {
       const result = await res.json();
       console.log("Product saved:", result);
 
-      // Success - update products list and close form
       mutate("/api/admin/products");
       resetAndCloseForms();
     } catch (err: any) {
@@ -228,65 +248,190 @@ export default function ProductsManagementPage() {
     }
   };
 
-  // Enhanced delete function with better user experience
+  // ✅ IMPROVED: Enhanced delete function with better options
   const handleDeleteProduct = async (productId: number) => {
     const product = products?.find((p) => p.id === productId);
     if (!product) return;
 
-    // First attempt - try normal delete or mark as out of stock
-    const firstConfirm = confirm(
-      `Delete "${product.name}"?\n\nIf this product is in orders, it will be marked as out of stock instead.`
+    // Different approach based on stock status
+    if (product.stock === 0) {
+      // For out of stock items, ask if they want to permanently delete
+      const confirmDelete = confirm(
+        `"${product.name}" is currently out of stock.\n\nDo you want to permanently delete this product? This action cannot be undone.`
+      );
+
+      if (!confirmDelete) return;
+
+      setIsDeleting(productId);
+
+      try {
+        const res = await fetch(
+          `/api/admin/products?id=${productId}&force=true`,
+          {
+            method: "DELETE",
+          }
+        );
+
+        if (res.ok) {
+          const result = await res.json();
+          alert(
+            `Product permanently deleted! ${result.removedOrderItems ? `Removed from ${result.removedOrderItems} order(s).` : ""}`
+          );
+          mutate("/api/admin/products");
+        } else {
+          throw new Error(await readError(res));
+        }
+      } catch (err: any) {
+        alert(`Error: ${err.message}`);
+      } finally {
+        setIsDeleting(null);
+      }
+    } else {
+      // For in-stock items, use the existing logic
+      const firstConfirm = confirm(
+        `Delete "${product.name}"?\n\nStock: ${product.stock} units\n\nIf this product is in orders, it will be marked as out of stock instead.`
+      );
+
+      if (!firstConfirm) return;
+
+      setIsDeleting(productId);
+
+      try {
+        const res = await fetch(`/api/admin/products?id=${productId}`, {
+          method: "DELETE",
+        });
+
+        if (res.ok) {
+          const result = await res.json();
+
+          if (result.markedOutOfStock) {
+            const forceDelete = confirm(
+              `"${product.name}" was marked as out of stock because it's in existing orders.\n\nDo you want to FORCE DELETE it anyway? This will remove it from all orders!`
+            );
+
+            if (forceDelete) {
+              const forceRes = await fetch(
+                `/api/admin/products?id=${productId}&force=true`,
+                {
+                  method: "DELETE",
+                }
+              );
+
+              if (forceRes.ok) {
+                const forceResult = await forceRes.json();
+                alert(
+                  `Product deleted! Removed from ${forceResult.removedOrderItems} order(s).`
+                );
+              } else {
+                throw new Error(await readError(forceRes));
+              }
+            } else {
+              alert("Product marked as out of stock.");
+            }
+          } else {
+            alert("Product deleted successfully!");
+          }
+
+          mutate("/api/admin/products");
+        } else {
+          throw new Error(await readError(res));
+        }
+      } catch (err: any) {
+        alert(`Error: ${err.message}`);
+      } finally {
+        setIsDeleting(null);
+      }
+    }
+  };
+
+  // ✅ ADDED: Bulk delete out of stock items
+  const handleBulkDeleteOutOfStock = async () => {
+    const outOfStockProducts = products?.filter((p) => p.stock === 0) || [];
+
+    if (outOfStockProducts.length === 0) {
+      alert("No out of stock products to delete.");
+      return;
+    }
+
+    const confirmBulkDelete = confirm(
+      `Delete all ${outOfStockProducts.length} out of stock products?\n\n${outOfStockProducts.map((p) => `• ${p.name}`).join("\n")}\n\nThis action cannot be undone.`
     );
 
-    if (!firstConfirm) return;
+    if (!confirmBulkDelete) return;
 
-    setIsDeleting(productId);
+    setIsBulkDeleting(true);
 
     try {
-      const res = await fetch(`/api/admin/products?id=${productId}`, {
-        method: "DELETE",
+      const deletePromises = outOfStockProducts.map((product) =>
+        fetch(`/api/admin/products?id=${product.id}&force=true`, {
+          method: "DELETE",
+        })
+      );
+
+      const results = await Promise.all(deletePromises);
+      const successful = results.filter((r) => r.ok).length;
+      const failed = results.length - successful;
+
+      if (failed > 0) {
+        alert(
+          `Bulk delete completed with some errors.\nSuccessful: ${successful}\nFailed: ${failed}`
+        );
+      } else {
+        alert(`Successfully deleted ${successful} out of stock products.`);
+      }
+
+      mutate("/api/admin/products");
+    } catch (err: any) {
+      alert(`Bulk delete error: ${err.message}`);
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  // ✅ ADDED: Restore stock function
+  const handleRestoreStock = async (productId: number) => {
+    const product = products?.find((p) => p.id === productId);
+    if (!product) return;
+
+    const newStock = prompt(
+      `Restore stock for "${product.name}":\n\nEnter new stock quantity:`,
+      "10"
+    );
+
+    if (newStock === null) return;
+
+    const stockNumber = parseInt(newStock, 10);
+    if (isNaN(stockNumber) || stockNumber < 0) {
+      alert("Please enter a valid stock number (0 or greater).");
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append("id", String(productId));
+      formData.append("name", product.name);
+      formData.append("description", product.description || "");
+      formData.append("price", String(product.price));
+      formData.append("category", product.category);
+      formData.append("stock", String(stockNumber));
+      formData.append("imageUrl", product.imageUrl || "");
+      formData.append("keepExistingImage", "true");
+
+      const res = await fetch("/api/admin/products", {
+        method: "PUT",
+        body: formData,
       });
 
       if (res.ok) {
-        const result = await res.json();
-
-        if (result.markedOutOfStock) {
-          const forceDelete = confirm(
-            `"${product.name}" was marked as out of stock because it's in existing orders.\n\nDo you want to FORCE DELETE it anyway? This will remove it from all orders!`
-          );
-
-          if (forceDelete) {
-            // Force delete
-            const forceRes = await fetch(
-              `/api/admin/products?id=${productId}&force=true`,
-              {
-                method: "DELETE",
-              }
-            );
-
-            if (forceRes.ok) {
-              const forceResult = await forceRes.json();
-              alert(
-                `Product deleted! Removed from ${forceResult.removedOrderItems} order(s).`
-              );
-            } else {
-              throw new Error(await readError(forceRes));
-            }
-          } else {
-            alert("Product marked as out of stock.");
-          }
-        } else {
-          alert("Product deleted successfully!");
-        }
-
+        alert(
+          `Stock restored! "${product.name}" now has ${stockNumber} units.`
+        );
         mutate("/api/admin/products");
       } else {
         throw new Error(await readError(res));
       }
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
-    } finally {
-      setIsDeleting(null);
+      alert(`Error restoring stock: ${err.message}`);
     }
   };
 
@@ -307,31 +452,64 @@ export default function ProductsManagementPage() {
 
   return (
     <div className="space-y-6">
+      {/* ✅ IMPROVED: Header with stats */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-          <Package className="mr-3" />
-          Product Management
-        </h1>
-        <button
-          onClick={() => {
-            if (showCreateForm) {
-              resetAndCloseForms();
-            } else {
-              resetAndCloseForms();
-              setShowCreateForm(true);
-            }
-          }}
-          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          {showCreateForm ? (
-            <X className="mr-2" size={20} />
-          ) : (
-            <Plus className="mr-2" size={20} />
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center">
+            <Package className="mr-3" />
+            Product Management
+          </h1>
+          <div className="flex items-center space-x-4 mt-2 text-sm text-gray-600">
+            <span>Total: {stockCounts.total}</span>
+            <span className="text-green-600">
+              In Stock: {stockCounts.inStock}
+            </span>
+            <span className="text-red-600">
+              Out of Stock: {stockCounts.outOfStock}
+            </span>
+            <span className="text-yellow-600">
+              Low Stock: {stockCounts.lowStock}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center space-x-2">
+          {/* ✅ ADDED: Bulk actions */}
+          {stockCounts.outOfStock > 0 && (
+            <button
+              onClick={handleBulkDeleteOutOfStock}
+              disabled={isBulkDeleting}
+              className="inline-flex items-center px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+            >
+              {isBulkDeleting ? (
+                <Loader2 className="mr-2 animate-spin" size={16} />
+              ) : (
+                <Trash2 className="mr-2" size={16} />
+              )}
+              Delete All Out of Stock ({stockCounts.outOfStock})
+            </button>
           )}
-          {showCreateForm ? "Cancel" : "Create New Product"}
-        </button>
+          <button
+            onClick={() => {
+              if (showCreateForm) {
+                resetAndCloseForms();
+              } else {
+                resetAndCloseForms();
+                setShowCreateForm(true);
+              }
+            }}
+            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            {showCreateForm ? (
+              <X className="mr-2" size={20} />
+            ) : (
+              <Plus className="mr-2" size={20} />
+            )}
+            {showCreateForm ? "Cancel" : "Create New Product"}
+          </button>
+        </div>
       </div>
 
+      {/* Form section - keeping your existing form code */}
       {isFormOpen && (
         <form
           onSubmit={handleFormSubmit}
@@ -358,7 +536,7 @@ export default function ProductsManagementPage() {
             </div>
           )}
 
-          {/* Image Upload Section - Updated to match ProductForm */}
+          {/* Image Upload Section */}
           <div className="p-4 border-2 border-dashed rounded-lg">
             <label
               htmlFor="file-upload"
@@ -369,28 +547,25 @@ export default function ProductsManagementPage() {
             <div className="flex items-center space-x-4">
               <div className="w-32 h-32 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden">
                 {selectedFile ? (
-                  // Show selected file preview
                   <img
                     src={URL.createObjectURL(selectedFile)}
                     alt="Product preview"
                     className="h-full w-full object-cover"
                   />
                 ) : imagePreview ? (
-                  // Show existing image
                   <img
                     src={resolveImagePath(imagePreview)}
                     alt="Product"
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  // Show placeholder
                   <UploadCloud className="h-8 w-8 text-gray-400" />
                 )}
               </div>
               <div className="flex flex-col space-y-2">
                 <input
                   id="file-upload"
-                  name="file" // IMPORTANT: Must match the field name expected by the server
+                  name="file"
                   type="file"
                   ref={fileInputRef}
                   onChange={handleFileSelect}
@@ -523,7 +698,8 @@ export default function ProductsManagementPage() {
         </form>
       )}
 
-      <div className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4">
+      {/* ✅ IMPROVED: Enhanced filters */}
+      <div className="flex flex-col lg:flex-row space-y-4 lg:space-y-0 lg:space-x-4 items-start lg:items-center">
         <div className="relative flex-grow">
           <Search className="absolute inset-y-0 left-0 pl-3 h-full w-5 text-gray-400" />
           <input
@@ -534,6 +710,7 @@ export default function ProductsManagementPage() {
             className="w-full pl-10 p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
+
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
@@ -546,8 +723,40 @@ export default function ProductsManagementPage() {
             </option>
           ))}
         </select>
+
+        {/* ✅ ADDED: Stock filter */}
+        <select
+          value={stockFilter}
+          onChange={(e) => setStockFilter(e.target.value as any)}
+          className="p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        >
+          <option value="all">All Stock Levels</option>
+          <option value="in-stock">In Stock ({stockCounts.inStock})</option>
+          <option value="out-of-stock">
+            Out of Stock ({stockCounts.outOfStock})
+          </option>
+          <option value="low-stock">Low Stock ({stockCounts.lowStock})</option>
+        </select>
+
+        {/* ✅ ADDED: Toggle out of stock visibility */}
+        <button
+          onClick={() => setShowOutOfStock(!showOutOfStock)}
+          className={`inline-flex items-center px-3 py-2 rounded-md border ${
+            showOutOfStock
+              ? "bg-gray-100 text-gray-700 border-gray-300"
+              : "bg-red-100 text-red-700 border-red-300"
+          }`}
+        >
+          {showOutOfStock ? (
+            <Eye className="mr-2" size={16} />
+          ) : (
+            <EyeOff className="mr-2" size={16} />
+          )}
+          {showOutOfStock ? "Showing Out of Stock" : "Hiding Out of Stock"}
+        </button>
       </div>
 
+      {/* ✅ IMPROVED: Product table with enhanced actions */}
       <div className="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -572,7 +781,10 @@ export default function ProductsManagementPage() {
 
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredProducts.map((prod) => (
-              <tr key={prod.id} className="hover:bg-gray-50">
+              <tr
+                key={prod.id}
+                className={`hover:bg-gray-50 ${prod.stock === 0 ? "bg-red-50" : ""}`}
+              >
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="relative w-12 h-12">
                     <Image
@@ -599,8 +811,8 @@ export default function ProductsManagementPage() {
                       prod.stock === 0
                         ? "inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800"
                         : prod.stock <= 5
-                        ? "inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800"
-                        : "text-gray-900"
+                          ? "inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800"
+                          : "text-gray-900"
                     }
                   >
                     {prod.stock}
@@ -612,24 +824,44 @@ export default function ProductsManagementPage() {
                   ${formatMoney(prod.price)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-2">
                     <button
                       onClick={() => startEditing(prod)}
-                      className="text-blue-600 hover:text-blue-900 transition-colors duration-200"
+                      className="text-blue-600 hover:text-blue-900 p-1 rounded transition-colors duration-200"
                       title="Edit product"
                     >
-                      <Edit2 size={18} />
+                      <Edit2 size={16} />
                     </button>
+
+                    {/* ✅ ADDED: Restore stock button for out of stock items */}
+                    {prod.stock === 0 && (
+                      <button
+                        onClick={() => handleRestoreStock(prod.id)}
+                        className="text-green-600 hover:text-green-900 p-1 rounded transition-colors duration-200"
+                        title="Restore stock"
+                      >
+                        <RefreshCw size={16} />
+                      </button>
+                    )}
+
                     <button
                       onClick={() => handleDeleteProduct(prod.id)}
                       disabled={isDeleting === prod.id}
-                      className="text-red-600 hover:text-red-900 disabled:text-gray-400 transition-colors duration-200"
-                      title="Delete product"
+                      className={`p-1 rounded transition-colors duration-200 ${
+                        prod.stock === 0
+                          ? "text-red-600 hover:text-red-900"
+                          : "text-orange-600 hover:text-orange-900"
+                      } disabled:text-gray-400`}
+                      title={
+                        prod.stock === 0
+                          ? "Permanently delete"
+                          : "Delete product"
+                      }
                     >
                       {isDeleting === prod.id ? (
-                        <Loader2 className="animate-spin" size={18} />
+                        <Loader2 className="animate-spin" size={16} />
                       ) : (
-                        <Trash2 size={18} />
+                        <Trash2 size={16} />
                       )}
                     </button>
                   </div>
@@ -647,7 +879,7 @@ export default function ProductsManagementPage() {
             No products found
           </h3>
           <p className="mt-1 text-sm text-gray-500">
-            {searchTerm || categoryFilter
+            {searchTerm || categoryFilter || stockFilter !== "all"
               ? "No products match your search criteria."
               : "Get started by creating your first product."}
           </p>

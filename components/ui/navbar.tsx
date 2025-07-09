@@ -1,15 +1,17 @@
-// File: components/ui/navbar.tsx (Fixed)
+// File: components/ui/navbar.tsx (Revised & Simplified)
 
-// --- ✅ CORRECTED IMPORT ---
-// We now import our new, custom helper function 'getAuth'.
-import { getAuth } from "@/lib/auth";
+import { NavbarClient } from "./NavbarClient"; // ✅ FIXED: Correct import path
 
-import { NavbarClient } from "./NavbarClient";
-
-export async function Navbar() {
-  // --- ✅ CORRECTED FUNCTION CALL ---
-  // We call our helper, which uses getServerSession under the hood. This works.
-  const session = await getAuth();
-
-  return <NavbarClient session={session} />;
+/**
+ * Navbar - Server Component Wrapper
+ * ---------------------------------
+ * This is a simple wrapper that renders the client component.
+ * Since we're already providing the session through SessionProvider
+ * in the layout, the client component can access it via useSession().
+ * This approach avoids hydration issues and keeps the code simple.
+ */
+export function Navbar() {
+  // ✅ SIMPLIFIED: No need to fetch session here since it's already
+  // provided through SessionProvider in the layout and accessible via useSession()
+  return <NavbarClient />;
 }

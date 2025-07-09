@@ -1,160 +1,251 @@
-// app/api/create-checkout-session/route.ts (Revised to fix URL issue)
-
-import { NextResponse } from "next/server";
+// app/api/create-checkout-session/route.ts
+import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { prisma } from "@/lib/prisma"; // Assuming this path is correct
-import type { CartItem, DeliveryFormData } from "@/types"; // It's good practice to have shared types
+import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 
+/* ──────────────────────────────────────────────────────
+   Stripe client
+   ────────────────────────────────────────────────────── */
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2023-10-16",
+  apiVersion: "2024-06-20",
 });
 
-// --- FIX: The Reliable URL Helper Function ---
-// This function ensures the base URL is always a full, valid URL with a protocol.
-const getBaseUrl = () => {
-  // If running on Vercel, VERCEL_URL is provided with the deployment domain.
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
-  }
-  // Otherwise, fall back to the local development URL.
-  // Ensure NEXT_PUBLIC_BASE_URL in your .env.local is "http://localhost:3000"
-  return process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-};
+/* ──────────────────────────────────────────────────────
+   Helpers
+   ────────────────────────────────────────────────────── */
 
-export async function POST(request: Request) {
+/* Ensure Stripe gets an absolute image URL or none at all */
+function buildAbsoluteImageUrl(raw?: string | null): string | null {
+  if (!raw) return null;
+
+  // Already absolute?
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+
+  const origin = process.env.NEXTAUTH_URL?.replace(/\/$/, "");
+  if (!origin) return null;
+
+  const url = `${origin}${raw.startsWith("/") ? "" : "/"}${raw}`;
   try {
-    const {
-      cart,
-      deliveryInfo,
-    }: { cart: CartItem[]; deliveryInfo: DeliveryFormData } =
-      await request.json();
+    new URL(url); // validate
+    return url;
+  } catch {
+    return null;
+  }
+}
 
-    if (!cart?.length || !deliveryInfo) {
+/* Include description only when non-empty (Stripe rejects "") */
+function safeDescription(desc?: string | null) {
+  return desc && desc.trim() ? { description: desc.trim() } : {};
+}
+
+/* ──────────────────────────────────────────────────────
+   Route: POST /api/create-checkout-session
+   ────────────────────────────────────────────────────── */
+export async function POST(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    const { items, deliveryInfo } = await req.json();
+
+    /* ---------------- Auth / customer data ------------ */
+    let userId: string | null = null;
+    let customerEmail = "";
+    let customerName = "";
+
+    if (session?.user) {
+      userId = session.user.id;
+      customerEmail = session.user.email ?? "";
+      customerName = session.user.name ?? "";
+    }
+
+    if (!customerEmail && deliveryInfo?.email)
+      customerEmail = deliveryInfo.email;
+    if (!customerName && deliveryInfo?.name) customerName = deliveryInfo.name;
+
+    if (!customerEmail) {
+      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    }
+
+    /* ---------------- Validate request ---------------- */
+    if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
-        { error: "Missing cart or delivery information" },
+        { error: "Cart cannot be empty" },
         { status: 400 }
       );
     }
 
-    /* ─────────────────────────────
-       1.  QUICK STOCK PRE-CHECK (Your logic is perfect, no changes)
-    ──────────────────────────────*/
-    for (const item of cart) {
-      const dbProduct = await prisma.product.findUnique({
-        where: { id: item.productId },
-      });
-      if (!dbProduct || dbProduct.stock < item.quantity) {
+    if (!deliveryInfo) {
+      return NextResponse.json(
+        { error: "Delivery information required" },
+        { status: 400 }
+      );
+    }
+
+    const missing = [
+      "address",
+      "city",
+      "state",
+      "postalCode",
+      "country",
+    ].filter(
+      (f) =>
+        !deliveryInfo[f] ||
+        (typeof deliveryInfo[f] === "string" && !deliveryInfo[f].trim())
+    );
+    if (missing.length) {
+      return NextResponse.json(
+        { error: `Missing address fields: ${missing.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    /* ---------------- Fetch products ------------------ */
+    const productIds = items.map((i: any) => i.id);
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds }, status: "ACTIVE" },
+    });
+    if (products.length !== productIds.length) {
+      return NextResponse.json(
+        { error: "One or more products are unavailable" },
+        { status: 400 }
+      );
+    }
+
+    for (const item of items) {
+      const p = products.find((x) => x.id === item.id)!;
+      if (p.stock < item.quantity) {
         return NextResponse.json(
-          { error: `Insufficient stock for ${item.name}` },
-          { status: 409 } // 409 Conflict is a great status code here
+          { error: `Insufficient stock for ${p.name}` },
+          { status: 400 }
         );
       }
     }
 
-    /* ─────────────────────────────
-       2.  PREP ORDER DATA (Your logic is perfect, no changes)
-    ──────────────────────────────*/
-    const orderIdHuman = `ORD-${Date.now()
-      .toString(36)
-      .slice(-6)
-      .toUpperCase()}`;
-    let totalAmount = 0;
-    const orderItemsData = [];
+    /* ---------------- Build Stripe line_items ---------- */
+    let subtotal = 0;
+    const lineItems = items.map((item: any) => {
+      const product = products.find((p) => p.id === item.id)!;
 
-    for (const item of cart) {
-      const dbProduct = await prisma.product.findUnique({
-        where: { id: item.productId },
-      });
-      const price = dbProduct!.price;
-      totalAmount += price * item.quantity;
-      orderItemsData.push({
-        productId: dbProduct!.id,
-        name: dbProduct!.name,
-        price,
-        quantity: item.quantity,
-        imageUrl: item.imageUrl,
-        variantId: item.variantId,
-        variantName: item.variantName,
-      });
-    }
+      subtotal += Number(product.price) * item.quantity;
 
-    /* ─────────────────────────────
-       3.  CREATE ORDER (PENDING) (Your transaction logic is excellent, no changes)
-    ──────────────────────────────*/
-    const order = await prisma.$transaction(async (tx) => {
-      const shippingAddress = await tx.address.create({
-        data: {
-          street: deliveryInfo.address,
-          city: deliveryInfo.city,
-          state: deliveryInfo.state,
-          postalCode: deliveryInfo.zipCode,
-          country: deliveryInfo.country,
-        },
-      });
-      return tx.order.create({
-        data: {
-          orderId: orderIdHuman,
-          customerEmail: deliveryInfo.email,
-          customerName: deliveryInfo.fullName,
-          customerPhone: deliveryInfo.phone,
-          totalAmount,
-          specialInstructions: deliveryInfo.specialInstructions,
-          shippingAddressId: shippingAddress.id,
-          status: "PENDING",
-          paymentStatus: "PENDING",
-          orderItems: { create: orderItemsData },
-          transactions: {
-            create: { amount: totalAmount, currency: "USD", status: "PENDING" },
-          },
-        },
-        include: { transactions: true },
-      });
-    });
+      const absImage = buildAbsoluteImageUrl(product.imageUrl);
 
-    // --- Get the reliable base URL once ---
-    const baseUrl = getBaseUrl();
-
-    /* ─────────────────────────────
-       4.  STRIPE CHECKOUT SESSION (Applying the URL fix here)
-    ──────────────────────────────*/
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      mode: "payment",
-      customer_email: deliveryInfo.email,
-      line_items: orderItemsData.map((item) => ({
-        quantity: item.quantity,
+      return {
         price_data: {
           currency: "usd",
-          unit_amount: Math.round(item.price * 100),
+          unit_amount: Math.round(Number(product.price) * 100),
           product_data: {
-            name:
-              item.name + (item.variantName ? ` (${item.variantName})` : ""),
-            // --- FIX: Ensure image URLs are absolute ---
-            images: item.imageUrl ? [`${baseUrl}${item.imageUrl}`] : [],
-            metadata: { productId: item.productId.toString() },
+            name: product.name,
+            ...safeDescription(product.description), // <- no empty strings
+            ...(absImage ? { images: [absImage] } : {}),
           },
         },
-      })),
-      // --- FIX: Construct URLs with the full, valid base URL ---
-      success_url: `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}&order_id=${order.id}`,
-      cancel_url: `${baseUrl}/checkout/cancel?order_id=${order.id}`,
-      metadata: {
-        internalOrderId: order.id,
-        transactionId: order.transactions[0].id,
+        quantity: item.quantity,
+      };
+    });
+
+    const shippingCost = 10.0;
+    const totalAmount = subtotal + shippingCost;
+
+    /* shipping line item */
+    lineItems.push({
+      price_data: {
+        currency: "usd",
+        unit_amount: Math.round(shippingCost * 100),
+        product_data: {
+          name: "Shipping",
+          description: "Standard shipping",
+        },
       },
+      quantity: 1,
     });
 
-    /* save session-id on transaction (no changes) */
-    await prisma.transaction.update({
-      where: { id: order.transactions[0].id },
-      data: { stripeSessionId: session.id },
+    /* ---------------- Create order in DB -------------- */
+    const order = await prisma.$transaction(async (tx) => {
+      const address = await tx.address.create({
+        data: {
+          street: deliveryInfo.address.trim(),
+          city: deliveryInfo.city.trim(),
+          state: deliveryInfo.state.trim(),
+          zipCode: deliveryInfo.postalCode.toString(),
+          country: deliveryInfo.country.trim(),
+        },
+      });
+
+      const oid = `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+      const newOrder = await tx.order.create({
+        data: {
+          orderId: oid,
+          userId,
+          customerEmail,
+          customerName,
+          customerPhone: deliveryInfo.phone ?? "",
+          totalAmount,
+          shippingAddressId: address.id,
+          status: "PENDING",
+          paymentStatus: "PENDING",
+          specialInstructions: deliveryInfo.instructions ?? null,
+        },
+      });
+
+      for (const item of items) {
+        const p = products.find((pr) => pr.id === item.id)!;
+
+        await tx.orderItem.create({
+          data: {
+            orderId: newOrder.id,
+            productId: p.id,
+            name: p.name,
+            price: p.price,
+            quantity: item.quantity,
+            imageUrl: p.imageUrl ?? "",
+          },
+        });
+
+        await tx.product.update({
+          where: { id: p.id },
+          data: { stock: { decrement: item.quantity } },
+        });
+      }
+
+      return newOrder;
     });
 
-    return NextResponse.json({ sessionId: session.id, orderId: order.id });
+    /* ---------------- Stripe checkout session --------- */
+    const stripeSession = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "payment",
+      line_items: lineItems,
+      success_url: `${process.env.NEXTAUTH_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}&order_id=${order.id}`,
+      cancel_url: `${process.env.NEXTAUTH_URL}/checkout/cancelled?order_id=${order.id}`,
+      metadata: {
+        orderId: order.id,
+        userId: userId ?? "guest",
+        customerEmail,
+      },
+      customer_email: customerEmail,
+      billing_address_collection: "auto",
+      shipping_address_collection: { allowed_countries: ["US", "CA"] },
+      allow_promotion_codes: true,
+    });
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { stripePaymentIntentId: stripeSession.id },
+    });
+
+    return NextResponse.json({
+      success: true,
+      orderId: order.id,
+      sessionId: stripeSession.id,
+      url: stripeSession.url,
+    });
   } catch (err: any) {
-    console.error("CREATE-CHECKOUT-SESSION-ERROR:", err.message, err);
+    console.error("❌ CREATE-CHECKOUT-SESSION-ERROR:", err);
     return NextResponse.json(
-      { error: "Failed to create checkout session" },
+      { error: "Failed to create checkout session", message: err.message },
       { status: 500 }
     );
   }

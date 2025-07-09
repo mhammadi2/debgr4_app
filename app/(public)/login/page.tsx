@@ -1,13 +1,11 @@
-// File: app/(public)/login/page.tsx (Corrected and Aligned)
-
 "use client";
 
 import { useState, ChangeEvent, FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, User, AlertCircle, Loader2 } from "lucide-react";
+import Link from "next/link";
 
-// Reusable input component - this is well-designed and needs no changes.
 const FormInput = ({ id, type, placeholder, value, onChange, icon: Icon }) => (
   <div className="relative">
     <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -18,7 +16,7 @@ const FormInput = ({ id, type, placeholder, value, onChange, icon: Icon }) => (
       name={id}
       type={type}
       required
-      className="relative block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 pl-10 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-blue-500 sm:text-sm"
+      className="relative block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 pl-10 text-gray-900 placeholder-gray-500 focus:z-10 focus:border-blue-500 focus:outline-none focus:ring-blue-500 sm:text-sm"
       placeholder={placeholder}
       value={value}
       onChange={onChange}
@@ -39,11 +37,11 @@ export default function PublicLoginPage() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  // ✅ IMPROVEMENT: Read the callbackUrl from the URL for a smart redirect.
-  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
 
-  // ❌ REMOVED: The `useEffect` and `useSession` hooks have been removed.
-  // They are no longer needed as the middleware handles all session-based redirects.
+  // ✅ FIX:
+  // 1. Look for the correct "redirect" parameter used by NextAuth.
+  // 2. Default to the customer "/profile" page.
+  const callbackUrl = searchParams.get("redirect") || "/profile";
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -53,34 +51,32 @@ export default function PublicLoginPage() {
     }));
   };
 
-  // ✅ REVISED: The login function is now simple, direct, and correct.
-  const handleLogin = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
     setLoading(true);
     setError("");
 
-    // ✅ CORRECTION: Use the specific "credentials-user" provider.
     const result = await signIn("credentials-user", {
       email: formData.email,
       password: formData.password,
-      redirect: false, // We handle redirects manually after checking the result.
+      redirect: false,
     });
 
     setLoading(false);
 
     if (result?.error) {
-      setError("Invalid email or password.");
+      setError("Invalid email or password. Please try again.");
     } else if (result?.ok) {
-      // On success, ALWAYS redirect to the user dashboard or the saved callbackUrl.
+      // On success, redirect to the intended page or the user's profile.
       router.push(callbackUrl);
     }
   };
 
-  // This function remains largely the same, but now calls the corrected `handleLogin`.
   const handleRegister = async (e: FormEvent) => {
     e.preventDefault();
     if (!formData.terms)
       return setError("You must agree to the Terms and Conditions.");
+
     setLoading(true);
     setError("");
 
@@ -98,12 +94,10 @@ export default function PublicLoginPage() {
       if (!response.ok)
         throw new Error(data.error || "Failed to create account.");
 
-      // After registration, trigger the simplified login process.
-      await handleLogin(e);
+      await handleLogin(); // Automatically log in after successful registration
     } catch (err: any) {
-      setError(err.message);
-    } finally {
       setLoading(false);
+      setError(err.message);
     }
   };
 
@@ -111,45 +105,39 @@ export default function PublicLoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="w-full max-w-md space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            {isLoginTab
-              ? "Sign in to your Account"
-              : "Create a Customer Account"}
+          <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
+            {isLoginTab ? "Sign in to your account" : "Create a new account"}
           </h2>
         </div>
-        <div className="flex border-b">
-          <button
-            onClick={() => setIsLoginTab(true)}
-            className={`w-1/2 py-4 text-sm font-medium ${
-              isLoginTab
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            onClick={() => setIsLoginTab(false)}
-            className={`w-1/2 py-4 text-sm font-medium ${
-              !isLoginTab
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            Create Account
-          </button>
+        {/* ... The rest of your JSX remains the same ... */}
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-6">
+            <button
+              onClick={() => setIsLoginTab(true)}
+              className={`${isLoginTab ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium w-1/2`}
+            >
+              Sign In
+            </button>
+            <button
+              onClick={() => setIsLoginTab(false)}
+              className={`${!isLoginTab ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium w-1/2`}
+            >
+              Create Account
+            </button>
+          </nav>
         </div>
+
         <form
           className="mt-8 space-y-6"
           onSubmit={isLoginTab ? handleLogin : handleRegister}
         >
           {error && (
-            <div className="flex items-center rounded-md bg-red-50 p-4">
-              <AlertCircle className="mr-3 h-5 w-5 flex-shrink-0 text-red-400" />
-              <p className="text-sm text-red-800">{error}</p>
+            <div className="flex items-center rounded-md bg-red-50 p-3">
+              <AlertCircle className="mr-2 h-5 w-5 flex-shrink-0 text-red-400" />
+              <p className="text-sm text-red-700">{error}</p>
             </div>
           )}
-          <div className="space-y-4 rounded-md shadow-sm">
+          <div className="space-y-4 rounded-md">
             {!isLoginTab && (
               <FormInput
                 id="name"
@@ -160,17 +148,14 @@ export default function PublicLoginPage() {
                 icon={User}
               />
             )}
-
-            {/* ✅ CORRECTION: Placeholder text is now clear and unambiguous. */}
             <FormInput
               id="email"
               type="email"
-              placeholder="Email"
+              placeholder="Email address"
               value={formData.email}
               onChange={handleInputChange}
               icon={User}
             />
-
             <FormInput
               id="password"
               type="password"
@@ -195,12 +180,12 @@ export default function PublicLoginPage() {
                 className="ml-2 block text-sm text-gray-900"
               >
                 I agree to the{" "}
-                <a
+                <Link
                   href="/terms"
                   className="font-medium text-blue-600 hover:text-blue-500"
                 >
                   Terms and Conditions
-                </a>
+                </Link>
               </label>
             </div>
           )}
@@ -208,7 +193,7 @@ export default function PublicLoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="group relative flex w-full justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+              className="group relative flex w-full justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-blue-400"
             >
               {loading ? (
                 <Loader2 className="animate-spin" />

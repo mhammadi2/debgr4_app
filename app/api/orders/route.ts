@@ -1,51 +1,48 @@
-// In: app/api/orders/route.ts (Corrected)
+// File: app/api/orders/route.ts
 
 import { NextResponse } from "next/server";
-// --- FIX: Import your custom `getSession` function, NOT `auth` ---
-import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma"; // Corrected to match your project setup
+import { prisma } from "@/lib/db"; // Using your project's prisma path
+import { requireUser } from "@/lib/auth"; // ✅ Importing our new helper
 
-// GET handler to fetch orders for the currently authenticated user
-export async function GET(request: Request) {
+/**
+ * GET: Fetches orders for the currently authenticated customer.
+ * This route is now protected by the `requireUser` helper.
+ */
+export async function GET() {
+  // ✅ This one line replaces all previous manual session and role checks.
+  // It handles everything: no session, or a session for an ADMIN.
+  const user = await requireUser();
+
+  // If `requireUser` returned a NextResponse, it means auth failed.
+  // We simply return that response immediately.
+  if (user instanceof NextResponse) {
+    return user;
+  }
+
+  // If we reach this point, `user` is guaranteed to be an authenticated customer.
   try {
-    // --- FIX: Use your `getSession` function to get the user session ---
-    const session = await getSession();
-
-    // Security Check: If there's no user in the session, deny access.
-    if (!session?.user?.id) {
-      return new NextResponse(
-        JSON.stringify({
-          error: "Unauthorized: You must be logged in to view orders.",
-        }),
-        { status: 401, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    // Fetch orders from the database that belong to the logged-in user.
     const orders = await prisma.order.findMany({
       where: {
-        userId: session.user.id, // Filter orders by the user's ID
+        userId: user.id, // We can safely use user.id
       },
-      include: {
-        // Include related order items to show what was purchased
-        items: {
-          include: {
-            product: true, // Include product details for each item
-          },
-        },
+      select: {
+        id: true,
+        orderId: true,
+        createdAt: true,
+        status: true,
+        totalAmount: true, // Aligned with your schema
       },
       orderBy: {
-        createdAt: "desc", // Show the most recent orders first
+        createdAt: "desc",
       },
     });
 
-    // Return the fetched orders as a JSON response.
     return NextResponse.json(orders);
   } catch (error) {
-    console.error("API Orders GET Error:", error);
-    return new NextResponse(
-      JSON.stringify({ error: "Internal Server Error" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+    console.error("[GET_ORDERS_API_ERROR]", error);
+    return NextResponse.json(
+      { error: "An internal error occurred while fetching your orders." },
+      { status: 500 }
     );
   }
 }

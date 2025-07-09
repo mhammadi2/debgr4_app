@@ -1,10 +1,9 @@
-// components/CheckoutModal.tsx
 "use client";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useForm } from "react-hook-form";
-import { X, CreditCard, Truck, Mail } from "lucide-react";
+import { X, CreditCard, Truck } from "lucide-react";
 import { CartItem, useCart } from "@/contexts/CartContext";
 import { loadStripe } from "@stripe/stripe-js";
 import { toast } from "react-hot-toast";
@@ -53,7 +52,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     estimatedDelivery: string;
   } | null>(null);
 
-  const { clearCart } = useCart();
+  const { clearCart, isHydrated } = useCart();
 
   // React Hook Form
   const {
@@ -61,6 +60,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     handleSubmit,
     formState: { errors },
   } = useForm<DeliveryFormData>();
+
+  // ✅ ADDED: Don't render if not hydrated to prevent hydration mismatch
+  if (!isHydrated) {
+    return null;
+  }
 
   // Handle delivery form submission
   const onDeliverySubmit = async (data: DeliveryFormData) => {
@@ -79,100 +83,121 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  // For demo purposes - simulate successful payment
-  const simulateSuccessfulPayment = (orderId: string) => {
-    // Calculate estimated delivery (5-7 days from now)
-    const deliveryDate = new Date();
-    deliveryDate.setDate(
-      deliveryDate.getDate() + 5 + Math.floor(Math.random() * 3)
-    );
-
-    setConfirmationDetails({
-      orderId:
-        orderId ||
-        `ORD-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
-      estimatedDelivery: deliveryDate.toLocaleDateString("en-US", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      }),
-    });
-
-    // Send confirmation email
-    sendConfirmationEmail();
-
-    // Move to confirmation step
-    setStep("confirmation");
-    setIsProcessing(false);
-
-    // Clear cart
-    clearCart();
-  };
-
-  // Handle payment with Stripe
+  // Handle payment with proper data structure
   const handlePayment = async () => {
     setIsProcessing(true);
     try {
-      if (!deliveryInfo) throw new Error("Delivery information missing");
+      if (!deliveryInfo) {
+        throw new Error("Delivery information missing");
+      }
+
+      if (!cart || cart.length === 0) {
+        throw new Error("Cart is empty");
+      }
+
+      // ✅ FIXED: Transform cart items to match backend expectations
+      const transformedItems = cart.map((item) => ({
+        id: parseInt(item.productId), // ✅ FIXED: Convert string back to number for backend
+        quantity: item.quantity,
+        name: item.name,
+        price: item.price,
+      }));
+
+      // Transform delivery info to match backend expectations
+      const transformedDeliveryInfo = {
+        address: deliveryInfo.address.trim(),
+        city: deliveryInfo.city.trim(),
+        state: deliveryInfo.state.trim(),
+        postalCode: deliveryInfo.zipCode.trim(),
+        country: deliveryInfo.country.trim(),
+        phone: deliveryInfo.phone?.trim() || "",
+        email: deliveryInfo.email?.trim() || "",
+        name: deliveryInfo.fullName?.trim() || "",
+        instructions: deliveryInfo.specialInstructions?.trim() || "",
+      };
+
+      // ✅ IMPROVED: Validate required fields
+      if (!transformedDeliveryInfo.email || !transformedDeliveryInfo.name) {
+        throw new Error("Name and email are required");
+      }
+
+      // Create payload matching backend expectations
+      const payload = {
+        items: transformedItems,
+        deliveryInfo: transformedDeliveryInfo,
+      };
+
+      console.log("🔍 Sending checkout payload:", payload);
 
       // Create a checkout session on the server
       const response = await fetch("/api/create-checkout-session", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cart,
-          deliveryInfo,
-        }),
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(payload),
       });
 
-      if (!response.ok) throw new Error("Payment session creation failed");
+      let data;
+      try {
+        const responseText = await response.text();
+        console.log("🔍 Raw response:", responseText);
 
-      const { sessionId, orderId } = await response.json();
+        if (!responseText) {
+          throw new Error("Empty response from server");
+        }
+
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("❌ Failed to parse response:", parseError);
+        throw new Error("Invalid response format from server");
+      }
+
+      console.log("🔍 Checkout response:", { status: response.status, data });
+
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      // Check for success and URL in response
+      if (!data.success || !data.url) {
+        throw new Error(data.error || "Invalid response from server");
+      }
 
       // Redirect to Stripe Checkout
-      const stripe = await stripePromise;
-      if (!stripe) throw new Error("Stripe failed to load");
+      console.log("🔍 Redirecting to Stripe:", data.url);
+      toast.success("Redirecting to payment...");
 
-      const { error } = await stripe.redirectToCheckout({ sessionId });
-      if (error) throw error;
+      // Clear cart and close modal before redirect
+      clearCart();
+      onClose();
 
-      // Note: In a real implementation, the confirmation would happen after Stripe redirect
-      // For demo purposes, we'll simulate success
-      simulateSuccessfulPayment(orderId);
-    } catch (error) {
-      console.error("Payment error:", error);
-      toast.error("Payment processing failed. Please try again.");
+      // Redirect to Stripe
+      window.location.href = data.url;
+    } catch (error: any) {
+      console.error("❌ Payment error:", error);
+
+      // Better error handling with specific messages
+      let errorMessage = "Payment processing failed. Please try again.";
+
+      if (error.message.includes("fetch")) {
+        errorMessage =
+          "Network error. Please check your connection and try again.";
+      } else if (error.message.includes("Insufficient stock")) {
+        errorMessage = "Some items are out of stock. Please update your cart.";
+      } else if (error.message.includes("required")) {
+        errorMessage = "Please fill in all required fields correctly.";
+      } else if (error.message.includes("Postal code")) {
+        errorMessage = "Please enter a valid postal code.";
+      } else if (error.message.includes("Empty response")) {
+        errorMessage = "Server is not responding. Please try again.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      toast.error(errorMessage);
       setIsProcessing(false);
-    }
-  };
-
-  // Send confirmation email
-  const sendConfirmationEmail = async () => {
-    if (!deliveryInfo) return;
-
-    try {
-      const response = await fetch("/api/send-confirmation-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: deliveryInfo.email,
-          name: deliveryInfo.fullName,
-          orderDetails: {
-            items: cart,
-            totalAmount,
-            deliveryAddress: deliveryInfo.address,
-            orderId: confirmationDetails?.orderId || "Processing",
-          },
-        }),
-      });
-
-      if (!response.ok) throw new Error("Failed to send confirmation email");
-
-      toast.success("Order confirmation email sent");
-    } catch (error) {
-      console.error("Email sending error:", error);
-      toast.error("Could not send confirmation email");
     }
   };
 
@@ -216,6 +241,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <button
               onClick={handleClose}
               className="text-gray-500 hover:text-gray-700"
+              disabled={isProcessing}
             >
               <X size={24} />
             </button>
@@ -230,8 +256,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   step === "delivery"
                     ? "33%"
                     : step === "payment"
-                    ? "66%"
-                    : "100%",
+                      ? "66%"
+                      : "100%",
               }}
             />
           </div>
@@ -254,6 +280,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           required: "Full name is required",
                         })}
                         className="w-full p-2 border rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        disabled={isProcessing}
                       />
                       {errors.fullName && (
                         <p className="text-red-500 text-xs mt-1">
@@ -275,6 +302,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           },
                         })}
                         className="w-full p-2 border rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        disabled={isProcessing}
                       />
                       {errors.email && (
                         <p className="text-red-500 text-xs mt-1">
@@ -294,6 +322,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         required: "Phone number is required",
                       })}
                       className="w-full p-2 border rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      disabled={isProcessing}
                     />
                     {errors.phone && (
                       <p className="text-red-500 text-xs mt-1">
@@ -313,6 +342,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         required: "Address is required",
                       })}
                       className="w-full p-2 border rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      disabled={isProcessing}
                     />
                     {errors.address && (
                       <p className="text-red-500 text-xs mt-1">
@@ -330,6 +360,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         type="text"
                         {...register("city", { required: "City is required" })}
                         className="w-full p-2 border rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        disabled={isProcessing}
                       />
                       {errors.city && (
                         <p className="text-red-500 text-xs mt-1">
@@ -347,6 +378,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           required: "State is required",
                         })}
                         className="w-full p-2 border rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        disabled={isProcessing}
                       />
                       {errors.state && (
                         <p className="text-red-500 text-xs mt-1">
@@ -367,6 +399,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           required: "ZIP code is required",
                         })}
                         className="w-full p-2 border rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        placeholder="12345"
+                        disabled={isProcessing}
                       />
                       {errors.zipCode && (
                         <p className="text-red-500 text-xs mt-1">
@@ -378,14 +412,17 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Country*
                       </label>
-                      <input
-                        type="text"
+                      <select
                         {...register("country", {
                           required: "Country is required",
                         })}
                         className="w-full p-2 border rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
                         defaultValue="United States"
-                      />
+                        disabled={isProcessing}
+                      >
+                        <option value="United States">United States</option>
+                        <option value="Canada">Canada</option>
+                      </select>
                       {errors.country && (
                         <p className="text-red-500 text-xs mt-1">
                           {errors.country.message}
@@ -402,6 +439,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       {...register("specialInstructions")}
                       rows={3}
                       className="w-full p-2 border rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      placeholder="Any special delivery instructions..."
+                      disabled={isProcessing}
                     />
                   </div>
                 </div>
@@ -410,10 +449,13 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <button
                     type="submit"
                     disabled={isProcessing}
-                    className="w-full py-2 px-4 bg-green-500 text-white rounded hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 disabled:opacity-50 flex items-center justify-center"
+                    className="w-full py-2 px-4 bg-green-500 text-white rounded hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                   >
                     {isProcessing ? (
-                      "Processing..."
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Processing...
+                      </>
                     ) : (
                       <>
                         <Truck size={18} className="mr-2" />
@@ -436,7 +478,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <div className="space-y-2 mb-4">
                     {cart.map((item) => (
                       <div
-                        key={item.productId}
+                        key={item.id}
                         className="flex justify-between text-sm"
                       >
                         <span>
@@ -445,10 +487,14 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         <span>${(item.price * item.quantity).toFixed(2)}</span>
                       </div>
                     ))}
+                    <div className="flex justify-between text-sm">
+                      <span>Shipping</span>
+                      <span>$10.00</span>
+                    </div>
                   </div>
                   <div className="border-t pt-2 flex justify-between font-bold">
                     <span>Total</span>
-                    <span>${totalAmount.toFixed(2)}</span>
+                    <span>${(totalAmount + 10).toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -459,6 +505,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <button
                       onClick={() => setStep("delivery")}
                       className="text-sm text-green-500 hover:text-green-600"
+                      disabled={isProcessing}
                     >
                       Edit
                     </button>
@@ -477,14 +524,17 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <button
                     onClick={handlePayment}
                     disabled={isProcessing}
-                    className="w-full py-3 px-4 bg-green-500 text-white rounded hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 disabled:opacity-50 flex items-center justify-center"
+                    className="w-full py-3 px-4 bg-green-500 text-white rounded hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                   >
                     {isProcessing ? (
-                      "Processing Payment..."
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                        Processing Payment...
+                      </>
                     ) : (
                       <>
                         <CreditCard size={18} className="mr-2" />
-                        Pay ${totalAmount.toFixed(2)}
+                        Pay ${(totalAmount + 10).toFixed(2)}
                       </>
                     )}
                   </button>

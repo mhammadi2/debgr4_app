@@ -1,12 +1,25 @@
-// lib/db.ts
-import { PrismaClient } from '@prisma/client'
+// lib/db.ts (Revised with Conditional Logging)
 
-const globalForPrisma = global as unknown as { prisma: PrismaClient }
+import { PrismaClient } from "@prisma/client";
 
+// Define the type for the global object to avoid 'any'
+declare global {
+  // allow global `var` declarations
+  // eslint-disable-next-line no-var
+  var prisma: PrismaClient | undefined;
+}
+
+// In development, this prevents multiple instances of Prisma Client from being created due to hot-reloading.
 export const prisma =
-  globalForPrisma.prisma ||
+  global.prisma ||
   new PrismaClient({
-    log: ['query', 'info', 'warn', 'error'],
-  })
+    // Conditionally enable logging based on the environment
+    log:
+      process.env.NODE_ENV === "development"
+        ? ["query", "info", "warn", "error"]
+        : ["error"],
+  });
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+if (process.env.NODE_ENV !== "production") {
+  global.prisma = prisma;
+}

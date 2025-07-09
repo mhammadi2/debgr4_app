@@ -1,34 +1,35 @@
-// File: app/api/admin/orders/recent/route.ts (Corrected and Secured)
+// File: app/api/admin/orders/recent/route.ts (Revised & Aligned)
 
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-// ✅ CORRECTION: We only need `getAuth` from our auth library.
-import { getAuth } from "@/lib/auth";
-import { UserRole } from "@prisma/client";
+import { prisma } from "@/lib/db"; // Using the consistent db import
+// ✅ ALIGNED: Import the specialized helper for protecting admin routes.
+import { requireAdmin } from "@/lib/auth";
 
 /**
  * GET: Fetches the 5 most recent orders for the admin dashboard.
+ * This is a protected route, accessible only by administrators.
  */
 export async function GET() {
-  // ✅ 1. Authorization: Get the session and verify the user is an admin.
-  // This is the correct way to protect an API route.
-  const session = await getAuth();
-
-  // If there's no session or the user is not an ADMIN, deny access.
-  if (session?.user?.role !== UserRole.ADMIN) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // --- If the check passes, the rest of the function can run ---
   try {
-    // 2. Database Query: Fetch the recent orders.
+    // ✨ REFACTORED: Use the `requireAdmin` helper to centralize authorization.
+    // This one line replaces the manual session fetching and role checking.
+    const user = await requireAdmin();
+
+    // If the check fails, `requireAdmin` returns a NextResponse. We just pass it along.
+    if (user instanceof NextResponse) {
+      return user; // Returns a 403 Forbidden response
+    }
+
+    // --- If authorization passes, proceed ---
+
+    // Database Query: Fetch the recent orders.
     const recentOrders = await prisma.order.findMany({
-      take: 5, // Limit to the 5 most recent orders
+      take: 5,
       orderBy: {
-        createdAt: "desc", // Order by creation date, newest first
+        createdAt: "desc",
       },
+      // Including user details (with a select) is great for the dashboard UI.
       include: {
-        // Include related user details for a richer response
         user: {
           select: {
             id: true,
@@ -39,11 +40,11 @@ export async function GET() {
       },
     });
 
-    // 3. Success Response: Return the fetched data.
+    // Success Response: Return the fetched data.
     return NextResponse.json(recentOrders);
   } catch (error) {
-    // 4. Error Handling: Catch potential database errors.
-    console.error("Failed to fetch recent orders:", error);
+    // Error Handling: Catch potential database or other unexpected errors.
+    console.error("API Error: Failed to fetch recent orders:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }

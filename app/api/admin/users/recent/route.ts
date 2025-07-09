@@ -1,33 +1,35 @@
-// File: app/api/admin/users/recent/route.ts (New File)
+// File: app/api/admin/users/recent/route.ts (Revised & Aligned)
 
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getAuth } from "@/lib/auth";
-import { UserRole } from "@prisma/client";
+import { prisma } from "@/lib/db"; // Using the consistent db import
+// ✅ ALIGNED: Import the specialized helper for protecting admin routes.
+import { requireAdmin } from "@/lib/auth";
 
 /**
  * GET: Fetches the 5 most recent users for the admin dashboard.
  * This is a protected route, accessible only by administrators.
  */
 export async function GET() {
-  // 1. Authorization: Secure the endpoint by checking for an admin session.
-  const session = await getAuth();
-
-  // If the user is not an admin, block access.
-  if (session?.user?.role !== UserRole.ADMIN) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // --- If authorization passes, proceed ---
   try {
-    // 2. Database Query: Fetch the 5 most recently created users.
+    // ✨ REFACTORED: Use the `requireAdmin` helper.
+    // This single line handles both fetching the session AND returning a 403
+    // error response if the user is not an authenticated admin.
+    const user = await requireAdmin();
+
+    // The helper returns a NextResponse on failure, so we check for that.
+    if (user instanceof NextResponse) {
+      return user; // Return the 403 Forbidden response
+    }
+
+    // --- If authorization passes, proceed with the main logic ---
+
+    // Database Query: Fetch the 5 most recently created users.
     const recentUsers = await prisma.user.findMany({
       take: 5,
       orderBy: {
-        createdAt: "desc", // Assuming your User model has a `createdAt` field
+        createdAt: "desc",
       },
-      // Select only the fields necessary for the dashboard to avoid sending
-      // sensitive data like password hashes.
+      // This `select` clause is a great security and performance practice.
       select: {
         id: true,
         name: true,
@@ -37,11 +39,11 @@ export async function GET() {
       },
     });
 
-    // 3. Success Response: Return the fetched user data.
+    // Success Response: Return the fetched user data.
     return NextResponse.json(recentUsers);
   } catch (error) {
-    // 4. Error Handling: Catch potential database errors.
-    console.error("Failed to fetch recent users:", error);
+    // Error Handling: Catch potential database or other unexpected errors.
+    console.error("API Error: Failed to fetch recent users:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }
