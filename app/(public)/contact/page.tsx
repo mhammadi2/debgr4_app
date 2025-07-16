@@ -1,21 +1,18 @@
+// app/(public)/contact/page.tsx
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   Mail,
   Phone,
-  MapPin,
   Send,
   User,
   MessageCircle,
   AlertCircle,
   CheckCircle,
-  Clock,
-  Globe,
-  Zap,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "sonner"; // Ensure 'sonner' is installed and configured in your _app.tsx or layout.tsx
 
 interface ContactFormData {
   name: string;
@@ -24,19 +21,7 @@ interface ContactFormData {
   message: string;
 }
 
-// ✅ FIXED: Move ContactInput outside to prevent re-creation on every render
-const ContactInput = ({
-  name,
-  label,
-  type = "text",
-  icon: Icon,
-  value,
-  onChange,
-  error,
-  isTextArea = false,
-  maxLength,
-  placeholder,
-}: {
+interface ContactInputProps {
   name: string;
   label: string;
   type?: string;
@@ -49,6 +34,19 @@ const ContactInput = ({
   isTextArea?: boolean;
   maxLength?: number;
   placeholder?: string;
+}
+
+const ContactInput: React.FC<ContactInputProps> = ({
+  name,
+  label,
+  type = "text",
+  icon: Icon,
+  value,
+  onChange,
+  error,
+  isTextArea = false,
+  maxLength,
+  placeholder,
 }) => {
   const commonClasses = `w-full px-4 py-3 border rounded-lg focus:outline-none transition-all duration-200 resize-none ${
     error
@@ -83,6 +81,7 @@ const ContactInput = ({
           maxLength={maxLength}
           className={commonClasses}
           placeholder={placeholder}
+          aria-describedby={error ? `${name}-error` : undefined}
         />
       ) : (
         <input
@@ -94,11 +93,16 @@ const ContactInput = ({
           maxLength={maxLength}
           className={commonClasses}
           placeholder={placeholder}
+          aria-describedby={error ? `${name}-error` : undefined}
         />
       )}
 
       {error && (
-        <p className="text-red-500 text-sm flex items-center">
+        <p
+          id={`${name}-error`}
+          className="text-red-500 text-sm flex items-center"
+          role="alert"
+        >
           <AlertCircle className="mr-1 w-4 h-4 flex-shrink-0" />
           {error}
         </p>
@@ -118,8 +122,13 @@ export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Partial<ContactFormData>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
-  // ✅ FIXED: Memoize validation to prevent unnecessary re-renders
+  // Fix hydration issues
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
   const validation = useMemo(() => {
     const newErrors: Partial<ContactFormData> = {};
 
@@ -141,20 +150,18 @@ export default function ContactPage() {
     }
 
     return newErrors;
-  }, [formData.name, formData.email, formData.subject, formData.message]);
+  }, [formData]);
 
-  // ✅ FIXED: Use useCallback to prevent function recreation
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const { name, value } = e.target;
 
-      // ✅ FIXED: Update form data without triggering validation immediately
       setFormData((prev) => ({
         ...prev,
         [name]: value,
       }));
 
-      // ✅ FIXED: Clear error for this field only when user starts typing
+      // Clear error as user types
       if (errors[name as keyof ContactFormData]) {
         setErrors((prev) => ({
           ...prev,
@@ -232,7 +239,7 @@ export default function ContactPage() {
         toast.error(result.error || "Failed to send message");
       }
     } catch (error) {
-      console.error("Submission error", error);
+      console.error("Submission error:", error);
       toast.error("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
@@ -250,6 +257,42 @@ export default function ContactPage() {
     setErrors({});
   }, []);
 
+  // Show loading skeleton during hydration
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-12">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <div className="h-10 bg-gray-200 rounded mb-4 animate-pulse"></div>
+            <div className="h-6 bg-gray-200 rounded max-w-3xl mx-auto animate-pulse"></div>
+          </div>
+          <div className="grid lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
+            <div className="bg-white shadow-xl rounded-lg p-8">
+              <div className="space-y-4">
+                {[...Array(5)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="h-12 bg-gray-200 rounded animate-pulse"
+                  ></div>
+                ))}
+              </div>
+            </div>
+            <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-lg p-8 shadow-xl">
+              <div className="space-y-4">
+                {[...Array(4)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="h-20 bg-white rounded-lg animate-pulse"
+                  ></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-12">
       <motion.div
@@ -263,8 +306,8 @@ export default function ContactPage() {
             Contact DeBugR4
           </h1>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Have a project in mind or questions about our semiconductor design
-            services? We're here to help you innovate.
+            Have a project in mind or questions about our services? We're here
+            to help you innovate.
           </p>
         </div>
 
@@ -329,7 +372,6 @@ export default function ContactPage() {
                     placeholder="Enter your message here. Please be as detailed as possible..."
                   />
 
-                  {/* ✅ ADDED: Form validation summary */}
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <div className="flex items-center justify-between text-sm text-gray-600">
                       <span>Form Completion:</span>
@@ -425,7 +467,7 @@ export default function ContactPage() {
             )}
           </motion.div>
 
-          {/* Contact Information Side */}
+          {/* Contact Information (Updated to use contactus@dbr4.com) */}
           <motion.div
             initial={{ x: 50, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
@@ -438,7 +480,6 @@ export default function ContactPage() {
             </h2>
 
             <div className="space-y-6">
-              {/* Contact Information */}
               <div className="flex items-start space-x-4 p-4 bg-white rounded-lg shadow-sm">
                 <div className="bg-green-100 p-3 rounded-full">
                   <Phone className="text-green-600" size={24} />
@@ -456,83 +497,14 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-800">Email Us</h3>
-                  <p className="text-gray-600">info@debugr4.com</p>
+                  <p className="text-gray-600">contactus@dbr4.com</p>{" "}
+                  {/* Updated email */}
                   <p className="text-sm text-gray-500">
                     We'll respond within 24 hours
                   </p>
                 </div>
               </div>
-
-              <div className="flex items-start space-x-4 p-4 bg-white rounded-lg shadow-sm">
-                <div className="bg-purple-100 p-3 rounded-full">
-                  <MapPin className="text-purple-600" size={24} />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-800">Visit Us</h3>
-                  <p className="text-gray-600">
-                    123 Tech Innovation Drive
-                    <br />
-                    Silicon Valley, CA 94025
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-4 p-4 bg-white rounded-lg shadow-sm">
-                <div className="bg-orange-100 p-3 rounded-full">
-                  <Clock className="text-orange-600" size={24} />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-800">
-                    Business Hours
-                  </h3>
-                  <p className="text-gray-600">
-                    Monday - Friday: 9:00 AM - 6:00 PM
-                    <br />
-                    Saturday: 10:00 AM - 4:00 PM
-                    <br />
-                    Sunday: Closed
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Services Section */}
-            <div className="mt-8 p-6 bg-white rounded-lg shadow-sm">
-              <h3 className="text-lg font-semibold mb-4 text-gray-800">
-                Our Services
-              </h3>
-              <div className="grid grid-cols-1 gap-3">
-                <div className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded transition-colors">
-                  <Zap className="text-green-600" size={18} />
-                  <span className="text-gray-700">IC Design & Development</span>
-                </div>
-                <div className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded transition-colors">
-                  <Globe className="text-blue-600" size={18} />
-                  <span className="text-gray-700">
-                    Electronic Component Supply
-                  </span>
-                </div>
-                <div className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded transition-colors">
-                  <MessageCircle className="text-purple-600" size={18} />
-                  <span className="text-gray-700">Technical Consulting</span>
-                </div>
-                <div className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded transition-colors">
-                  <Send className="text-orange-600" size={18} />
-                  <span className="text-gray-700">Custom Design Solutions</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Response Time */}
-            <div className="mt-6 p-4 bg-green-100 rounded-lg border border-green-200">
-              <h4 className="font-semibold text-green-800 mb-2 flex items-center">
-                <CheckCircle className="mr-2" size={18} />
-                Quick Response Guarantee
-              </h4>
-              <p className="text-sm text-green-700">
-                We typically respond to all inquiries within 2-4 hours during
-                business hours. For urgent matters, please call us directly.
-              </p>
+              {/* Other contact info, services etc. */}
             </div>
           </motion.div>
         </div>
