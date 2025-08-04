@@ -39,7 +39,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   cart,
   totalAmount,
 }) => {
-  // Multi-step form handling
   const [step, setStep] = useState<"delivery" | "payment" | "confirmation">(
     "delivery"
   );
@@ -54,14 +53,13 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const { clearCart, isHydrated } = useCart();
 
-  // React Hook Form
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<DeliveryFormData>();
 
-  // ✅ ADDED: Don't render if not hydrated to prevent hydration mismatch
+  // Don't render if not hydrated to prevent hydration mismatch
   if (!isHydrated) {
     return null;
   }
@@ -70,11 +68,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const onDeliverySubmit = async (data: DeliveryFormData) => {
     setIsProcessing(true);
     try {
-      // Save delivery information
-      setDeliveryInfo(data);
-
-      // Move to payment step
-      setStep("payment");
+      setDeliveryInfo(data); // Save delivery information
+      setStep("payment"); // Move to payment step
     } catch (error) {
       console.error("Error saving delivery information:", error);
       toast.error("Could not save delivery information");
@@ -88,22 +83,20 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setIsProcessing(true);
     try {
       if (!deliveryInfo) {
-        throw new Error("Delivery information missing");
+        throw new Error("Delivery information is missing");
       }
 
       if (!cart || cart.length === 0) {
         throw new Error("Cart is empty");
       }
 
-      // ✅ FIXED: Transform cart items to match backend expectations
       const transformedItems = cart.map((item) => ({
-        id: parseInt(item.productId), // ✅ FIXED: Convert string back to number for backend
+        id: parseInt(item.productId),
         quantity: item.quantity,
         name: item.name,
         price: item.price,
       }));
 
-      // Transform delivery info to match backend expectations
       const transformedDeliveryInfo = {
         address: deliveryInfo.address.trim(),
         city: deliveryInfo.city.trim(),
@@ -116,12 +109,17 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         instructions: deliveryInfo.specialInstructions?.trim() || "",
       };
 
-      // ✅ IMPROVED: Validate required fields
-      if (!transformedDeliveryInfo.email || !transformedDeliveryInfo.name) {
-        throw new Error("Name and email are required");
+      // Log the email to check for validity
+      console.log("Email to send:", transformedDeliveryInfo.email);
+
+      // Validate required fields, also check email format
+      if (
+        !transformedDeliveryInfo.email ||
+        !transformedDeliveryInfo.email.match(/^\S+@\S+\.\S+$/)
+      ) {
+        throw new Error("A valid email address is required.");
       }
 
-      // Create payload matching backend expectations
       const payload = {
         items: transformedItems,
         deliveryInfo: transformedDeliveryInfo,
@@ -141,26 +139,20 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       let data;
       try {
-        const responseText = await response.text();
-        console.log("🔍 Raw response:", responseText);
-
-        if (!responseText) {
-          throw new Error("Empty response from server");
-        }
-
-        data = JSON.parse(responseText);
+        data = await response.json();
+        console.log("🔍 Checkout response:", { status: response.status, data });
       } catch (parseError) {
         console.error("❌ Failed to parse response:", parseError);
         throw new Error("Invalid response format from server");
       }
 
-      console.log("🔍 Checkout response:", { status: response.status, data });
-
+      // Check for HTTP response status and payload validity
       if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        const errorMessage =
+          data?.error || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
       }
 
-      // Check for success and URL in response
       if (!data.success || !data.url) {
         throw new Error(data.error || "Invalid response from server");
       }
@@ -172,15 +164,12 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       // Clear cart and close modal before redirect
       clearCart();
       onClose();
-
-      // Redirect to Stripe
       window.location.href = data.url;
     } catch (error: any) {
       console.error("❌ Payment error:", error);
-
-      // Better error handling with specific messages
       let errorMessage = "Payment processing failed. Please try again.";
 
+      // Detailed error handling
       if (error.message.includes("fetch")) {
         errorMessage =
           "Network error. Please check your connection and try again.";

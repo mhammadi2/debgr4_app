@@ -1,13 +1,12 @@
-// app/api/verify-payment/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { prisma } from "@/lib/db"; // <- same client used everywhere
+import { prisma } from "@/lib/db"; // Ensure the Prisma client is correctly exported from here
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2024-06-20",
 });
 
-/* helper: Stripe → Prisma enum */
+/* Helper to convert Stripe payment status to Prisma enum */
 function toPaymentStatus(stripeStatus: string) {
   switch (stripeStatus) {
     case "paid":
@@ -18,7 +17,7 @@ function toPaymentStatus(stripeStatus: string) {
     case "expired":
       return "FAILED";
     default:
-      return "PENDING";
+      return "PENDING"; // Ensure you handle all potential status cases
   }
 }
 
@@ -32,13 +31,13 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    /* 1️⃣  Retrieve Checkout Session (and payment_intent) */
+    // Retrieve the Checkout Session with a payment intent expanded
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
       expand: ["payment_intent"],
     });
 
-    /* 2️⃣  We stored this key in create-checkout-session */
-    const orderId = session.metadata?.orderId; // ← changed
+    // Extract the order ID from metadata
+    const orderId = session.metadata?.orderId;
     if (!orderId) {
       return NextResponse.json(
         { error: "Checkout session missing orderId metadata" },
@@ -46,19 +45,19 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    /* 3️⃣  Update order record */
+    // Update the order record in the database
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
       data: {
-        paymentStatus: toPaymentStatus(session.payment_status),
+        paymentStatus: toPaymentStatus(session.payment_status), // Map status to Prisma's enum
         status: session.payment_status === "paid" ? "PROCESSING" : "PENDING",
         stripePaymentIntentId:
           (session.payment_intent as Stripe.PaymentIntent | null)?.id ?? null,
       },
-      include: { orderItems: true, shippingAddress: true },
+      include: { orderItems: true, shippingAddress: true }, // Modify includes according to your needs
     });
 
-    /* 4️⃣  Respond to success page */
+    // Respond to the client with updated order information
     return NextResponse.json({
       success: true,
       order: updatedOrder,
@@ -67,7 +66,7 @@ export async function GET(req: NextRequest) {
   } catch (err: any) {
     console.error("verify-payment error:", err);
 
-    /* Stripe specific invalid id */
+    // Specific error for invalid Stripe session IDs
     if (err?.type === "StripeInvalidRequestError") {
       return NextResponse.json(
         { error: "Invalid session_id" },
@@ -75,6 +74,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // General error response for failures
     return NextResponse.json(
       { error: "Failed to verify payment", message: err.message },
       { status: 500 }
