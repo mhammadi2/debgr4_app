@@ -1,4 +1,4 @@
-// File: lib/auth.ts (Final, Aligned Version)
+// File: lib/auth.ts
 
 import { NextAuthOptions, getServerSession } from "next-auth";
 import type { User } from "next-auth"; // Use type for cleaner imports
@@ -47,7 +47,7 @@ export const authOptions: NextAuthOptions = {
           where: { email: creds.email },
         });
         if (!user || !user.password) return null;
-        if (user.role === UserRole.ADMIN) return null;
+        if (user.role === UserRole.ADMIN) return null; // Prevent Admin login with user credentials
 
         const isPasswordCorrect = await compare(creds.password, user.password);
         if (!isPasswordCorrect) return null;
@@ -83,9 +83,10 @@ export const authOptions: NextAuthOptions = {
         );
         if (!isPasswordCorrect) return null;
 
+        // Ensure the admin is valid and return their role
         return {
           id: admin.id,
-          email: admin.username,
+          email: admin.username, // or another attribute to represent admin email
           name: admin.username,
           role: admin.role,
         };
@@ -95,14 +96,15 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async jwt({ token, user }) {
+      // Attach user data to the token
       if (user) {
         token.id = user.id;
         token.role = user.role as UserRole;
       }
       return token;
     },
-    // This callback makes the custom data available on the `session` object.
     async session({ session, token }) {
+      // Attach token data to session
       if (session.user) {
         session.user.id = token.id;
         session.user.role = token.role;
@@ -112,27 +114,16 @@ export const authOptions: NextAuthOptions = {
   },
 
   pages: {
-    signIn: "/login",
-    error: "/login",
+    signIn: "/admin/login", // Redirect to login page
+    error: "/admin/login", // Redirect to login on error
   },
 };
 
 /* ==========================================================
    HELPER FUNCTIONS 
    ========================================================== */
-
-/**
- * Retrieves the session on the server side. Can be used in Server Components,
- * API routes, and route handlers.
- * @returns {Promise<Session | null>} The user's session object or null.
- */
 export const getAuthSession = () => getServerSession(authOptions);
 
-/**
- * A middleware-like helper for API routes that must be restricted to admins.
- * Returns the admin's session user object on success, or a 403 Forbidden NextResponse on failure.
- * @returns {Promise<User | NextResponse>}
- */
 export async function requireAdmin() {
   const session = await getAuthSession();
   const user = session?.user;
@@ -147,16 +138,10 @@ export async function requireAdmin() {
   return user;
 }
 
-/**
- * A middleware-like helper for API routes that must be restricted to authenticated customers.
- * Returns the user's session object on success, or a 401 Unauthorized NextResponse on failure.
- * @returns {Promise<User | NextResponse>}
- */
 export async function requireUser() {
   const session = await getAuthSession();
   const user = session?.user;
 
-  // Deny access if there is no user or if the user is an admin
   if (!user || user.role !== UserRole.USER) {
     return new NextResponse(
       JSON.stringify({ error: "Unauthorized: Customer login required." }),

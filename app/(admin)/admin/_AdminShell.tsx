@@ -1,4 +1,3 @@
-// In: app/admin/_AdminShell.tsx (Revised and Refined)
 "use client";
 
 import { ReactNode, useState } from "react";
@@ -17,10 +16,10 @@ import {
   Menu,
   X,
   Shield,
-  LucideIcon, // Import LucideIcon for type safety
+  LucideIcon,
 } from "lucide-react";
 
-// --- REFINEMENT 1: Create a reusable NavItem component to avoid duplicate code ---
+// NavItem types and props
 interface NavItemProps {
   href: string;
   label: string;
@@ -36,11 +35,9 @@ const NavItem = ({
   currentPath,
   onClick,
 }: NavItemProps) => {
-  const isActive = currentPath === href;
-  // Define a base class string for common styles
+  const isActive = currentPath === href; // Check active state
   const baseClasses =
     "group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors";
-  // Define active vs. inactive styles
   const activeClasses = "bg-blue-100 text-blue-700";
   const inactiveClasses = "text-gray-600 hover:bg-gray-100 hover:text-gray-900";
 
@@ -56,6 +53,7 @@ const NavItem = ({
   );
 };
 
+// Main AdminShell Props
 interface AdminShellProps {
   children: ReactNode;
 }
@@ -63,10 +61,9 @@ interface AdminShellProps {
 export default function AdminShell({ children }: AdminShellProps) {
   const { data: session } = useSession();
   const router = useRouter();
-  const pathname = usePathname(); // currentPath is more descriptive
+  const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // --- REFINEMENT 2: Type the navigation array for better safety ---
   const navigation: { name: string; href: string; icon: LucideIcon }[] = [
     { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { name: "Products", href: "/admin/products", icon: Package },
@@ -77,14 +74,15 @@ export default function AdminShell({ children }: AdminShellProps) {
     { name: "Settings", href: "/admin/settings", icon: Settings },
   ];
 
+  // Handle sign out and navigation
   const handleSignOut = async () => {
-    await signOut({ redirect: false, callbackUrl: "/login" });
-    router.push("/login");
+    await signOut({ redirect: false, callbackUrl: "/admin/login" });
+    router.push("/admin/login");
   };
 
   const closeSidebar = () => setSidebarOpen(false);
 
-  // --- REFINEMENT 3: Create a reusable SidebarNav component ---
+  // Sidebar Navigation Component
   const SidebarNav = ({ mobile = false }: { mobile?: boolean }) => (
     <nav className={`flex-1 space-y-1 px-2 py-4 ${mobile ? "mt-4" : ""}`}>
       {navigation.map((item) => (
@@ -104,9 +102,7 @@ export default function AdminShell({ children }: AdminShellProps) {
     <div className="min-h-screen bg-gray-100">
       {/* Mobile Sidebar (Overlay) */}
       <div
-        className={`fixed inset-0 z-40 lg:hidden ${
-          sidebarOpen ? "block" : "hidden"
-        }`}
+        className={`fixed inset-0 z-40 lg:hidden ${sidebarOpen ? "block" : "hidden"}`}
       >
         <div
           className="fixed inset-0 bg-black/30"
@@ -137,7 +133,6 @@ export default function AdminShell({ children }: AdminShellProps) {
 
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col lg:pl-64">
-        {/* Top Bar */}
         <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b bg-white px-4 sm:px-6 lg:px-8">
           <button
             className="lg:hidden"
@@ -146,8 +141,7 @@ export default function AdminShell({ children }: AdminShellProps) {
           >
             <Menu size={24} />
           </button>
-          {/* This div is a spacer to push the user menu to the right on mobile */}
-          <div className="lg:hidden flex-1" />
+          <div className="flex-1" />
           <div className="flex items-center gap-x-4">
             <span className="text-sm font-medium text-gray-700">
               {session?.user?.name || session?.user?.email}
